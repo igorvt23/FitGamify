@@ -23,7 +23,7 @@ export function AppTabs() {
   const { t } = useI18n();
 
   return (
-    <Tab.Navigator screenOptions={{ headerTitleAlign: "center" }}>
+    <Tab.Navigator initialRouteName="Workout" screenOptions={{ headerTitleAlign: "center" }}>
       <Tab.Screen
         name="Workout"
         component={WorkoutScreen}

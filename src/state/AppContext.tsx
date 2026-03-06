@@ -4,24 +4,30 @@ import { useColorScheme } from "react-native";
 import { resolveNewAchievements } from "../core/gamification";
 import { calculateUpdatedStreak } from "../core/streak";
 import {
-  addExerciseToTemplate,
+  addExerciseToTemplateWithWeight,
   checkInTodayWorkout,
   clearTemplateExercises,
   createExerciseLibraryItem,
   createTemplate,
   createTodayWorkoutIfMissing,
+  deleteTemplate,
+  deleteTemplateExercise,
   exportBackupPayload,
   getAchievements,
   getAllSessions,
   getExerciseLibrary,
   getProfile,
   getRecentErrors,
+  getTemplateExercises,
   getTemplates,
   getTodayTemplate,
   getTodayWorkout,
   importBackupPayload,
   insertAchievement,
   logError,
+  reorderTemplate,
+  updateTemplate,
+  updateTemplateExercise,
   updateExerciseMetrics,
   updateProfileDisplayName,
   updateProfileStreak
@@ -45,7 +51,6 @@ import {
   TemplateExercise,
   UserProfile,
   SignUpInput,
-  Weekday,
   WorkoutTemplate,
   WorkoutWithExercises
 } from "../types";
@@ -66,17 +71,35 @@ type AppContextData = {
   authUser: AuthUser | null;
   bootstrap: () => Promise<void>;
   ensureTodayWorkout: () => Promise<void>;
-  saveExercise: (exerciseId: string, weightKg: number, intensity: number) => Promise<void>;
+  saveExercise: (exerciseId: string, weightKg: number, intensity: number, isCompleted: boolean) => Promise<void>;
   doCheckIn: (translate: (key: string) => string) => Promise<void>;
   setTheme: (theme: AppTheme) => void;
   setLanguage: (language: AppLanguage) => void;
   createExerciseLibrary: (name: string, imageKey: string) => Promise<void>;
-  saveTemplateForDay: (params: {
-    weekday: Weekday;
+  saveTemplate: (params: {
     name: string;
     muscleGroup: string;
-    exercises: Array<{ exerciseName: string; sets: number; reps: number; imageKey: string }>;
+    exercises: Array<{ exerciseName: string; repScheme: string; defaultWeightKg: number; imageKey: string }>;
   }) => Promise<void>;
+  moveTemplate: (templateId: string, direction: "up" | "down") => Promise<void>;
+  updateTemplateInfo: (templateId: string, name: string, muscleGroup: string) => Promise<void>;
+  deleteTemplateById: (templateId: string) => Promise<void>;
+  addExerciseToTemplateById: (params: {
+    templateId: string;
+    exerciseName: string;
+    repScheme: string;
+    defaultWeightKg: number;
+    imageKey: string;
+  }) => Promise<void>;
+  updateTemplateExerciseById: (params: {
+    exerciseId: string;
+    exerciseName: string;
+    repScheme: string;
+    defaultWeightKg: number;
+    imageKey: string;
+  }) => Promise<void>;
+  deleteTemplateExerciseById: (exerciseId: string) => Promise<void>;
+  fetchTemplateExercises: (templateId: string) => Promise<TemplateExercise[]>;
   signUp: (payload: SignUpInput) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -172,8 +195,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const workout = await createTodayWorkoutIfMissing();
       setCurrentWorkout(workout);
-      const allSessions = await getAllSessions();
+      const [allSessions, todayData] = await Promise.all([getAllSessions(), getTodayTemplate()]);
       setSessions(allSessions);
+      setTodayTemplate(todayData.template);
+      setTodayTemplateExercises(todayData.exercises);
       await syncAfterChange();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Falha ao criar treino";
@@ -183,9 +208,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [syncAfterChange]);
 
   const saveExercise = useCallback(
-    async (exerciseId: string, weightKg: number, intensity: number) => {
+    async (exerciseId: string, weightKg: number, intensity: number, isCompleted: boolean) => {
       try {
-        await updateExerciseMetrics(exerciseId, weightKg, intensity);
+        await updateExerciseMetrics(exerciseId, weightKg, intensity, isCompleted);
         const today = await getTodayWorkout();
         setCurrentWorkout(today);
         const allSessions = await getAllSessions();
@@ -253,21 +278,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [syncAfterChange]
   );
 
-  const saveTemplateForDay = useCallback(
+  const saveTemplate = useCallback(
     async (params: {
-      weekday: Weekday;
       name: string;
       muscleGroup: string;
-      exercises: Array<{ exerciseName: string; sets: number; reps: number; imageKey: string }>;
+      exercises: Array<{ exerciseName: string; repScheme: string; defaultWeightKg: number; imageKey: string }>;
     }) => {
-      const templateId = await createTemplate(params.name, params.muscleGroup, params.weekday);
+      const templateId = await createTemplate(params.name, params.muscleGroup);
       await clearTemplateExercises(templateId);
 
       for (const item of params.exercises) {
         if (!item.exerciseName.trim()) {
           continue;
         }
-        await addExerciseToTemplate(templateId, item.exerciseName, item.sets, item.reps, item.imageKey || "dumbbell");
+        await addExerciseToTemplateWithWeight(
+          templateId,
+          item.exerciseName,
+          item.repScheme,
+          item.defaultWeightKg,
+          item.imageKey || "dumbbell"
+        );
       }
 
       const [templatesList, todayData] = await Promise.all([getTemplates(), getTodayTemplate()]);
@@ -278,6 +308,102 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     },
     [syncAfterChange]
   );
+
+  const moveTemplate = useCallback(
+    async (templateId: string, direction: "up" | "down") => {
+      await reorderTemplate(templateId, direction);
+      const [templatesList, todayData] = await Promise.all([getTemplates(), getTodayTemplate()]);
+      setTemplates(templatesList);
+      setTodayTemplate(todayData.template);
+      setTodayTemplateExercises(todayData.exercises);
+      await syncAfterChange();
+    },
+    [syncAfterChange]
+  );
+
+  const updateTemplateInfo = useCallback(
+    async (templateId: string, name: string, muscleGroup: string) => {
+      await updateTemplate(templateId, name, muscleGroup);
+      const [templatesList, todayData] = await Promise.all([getTemplates(), getTodayTemplate()]);
+      setTemplates(templatesList);
+      setTodayTemplate(todayData.template);
+      setTodayTemplateExercises(todayData.exercises);
+      await syncAfterChange();
+    },
+    [syncAfterChange]
+  );
+
+  const deleteTemplateById = useCallback(
+    async (templateId: string) => {
+      await deleteTemplate(templateId);
+      const [templatesList, todayData] = await Promise.all([getTemplates(), getTodayTemplate()]);
+      setTemplates(templatesList);
+      setTodayTemplate(todayData.template);
+      setTodayTemplateExercises(todayData.exercises);
+      await syncAfterChange();
+    },
+    [syncAfterChange]
+  );
+
+  const addExerciseToTemplateById = useCallback(
+    async (params: {
+      templateId: string;
+      exerciseName: string;
+      repScheme: string;
+      defaultWeightKg: number;
+      imageKey: string;
+    }) => {
+      await addExerciseToTemplateWithWeight(
+        params.templateId,
+        params.exerciseName,
+        params.repScheme,
+        params.defaultWeightKg,
+        params.imageKey || "dumbbell"
+      );
+      const todayData = await getTodayTemplate();
+      setTodayTemplate(todayData.template);
+      setTodayTemplateExercises(todayData.exercises);
+      await syncAfterChange();
+    },
+    [syncAfterChange]
+  );
+
+  const updateTemplateExerciseById = useCallback(
+    async (params: {
+      exerciseId: string;
+      exerciseName: string;
+      repScheme: string;
+      defaultWeightKg: number;
+      imageKey: string;
+    }) => {
+      await updateTemplateExercise(params.exerciseId, {
+        exerciseName: params.exerciseName,
+        repScheme: params.repScheme,
+        defaultWeightKg: params.defaultWeightKg,
+        imageKey: params.imageKey || "dumbbell"
+      });
+      const todayData = await getTodayTemplate();
+      setTodayTemplate(todayData.template);
+      setTodayTemplateExercises(todayData.exercises);
+      await syncAfterChange();
+    },
+    [syncAfterChange]
+  );
+
+  const deleteTemplateExerciseById = useCallback(
+    async (exerciseId: string) => {
+      await deleteTemplateExercise(exerciseId);
+      const todayData = await getTodayTemplate();
+      setTodayTemplate(todayData.template);
+      setTodayTemplateExercises(todayData.exercises);
+      await syncAfterChange();
+    },
+    [syncAfterChange]
+  );
+
+  const fetchTemplateExercises = useCallback(async (templateId: string) => {
+    return getTemplateExercises(templateId);
+  }, []);
 
   const signUp = useCallback(async (payload: SignUpInput) => {
     await signUpWithEmail(payload);
@@ -334,7 +460,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setTheme,
       setLanguage,
       createExerciseLibrary,
-      saveTemplateForDay,
+      saveTemplate,
+      moveTemplate,
+      updateTemplateInfo,
+      deleteTemplateById,
+      addExerciseToTemplateById,
+      updateTemplateExerciseById,
+      deleteTemplateExerciseById,
+      fetchTemplateExercises,
       signUp,
       signIn,
       signOut,
@@ -360,7 +493,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       saveExercise,
       doCheckIn,
       createExerciseLibrary,
-      saveTemplateForDay,
+      saveTemplate,
+      moveTemplate,
+      updateTemplateInfo,
+      deleteTemplateById,
+      addExerciseToTemplateById,
+      updateTemplateExerciseById,
+      deleteTemplateExerciseById,
+      fetchTemplateExercises,
       signUp,
       signIn,
       signOut,

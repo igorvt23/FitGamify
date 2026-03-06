@@ -4,10 +4,10 @@ export type AppLanguage = "pt-BR" | "en";
 export type Exercise = {
   id: string;
   name: string;
-  sets: number;
-  reps: number;
+  repScheme: string;
   weightKg: number;
   intensity: number;
+  isCompleted: boolean;
   imageKey: string;
 };
 
@@ -24,7 +24,7 @@ export type WorkoutTemplate = {
   id: string;
   name: string;
   muscleGroup: string;
-  weekday: Weekday;
+  orderIndex: number;
   createdAtIso: string;
 };
 
@@ -32,8 +32,8 @@ export type TemplateExercise = {
   id: string;
   templateId: string;
   exerciseName: string;
-  sets: number;
-  reps: number;
+  repScheme: string;
+  defaultWeightKg: number;
   imageKey: string;
 };
 
@@ -41,6 +41,9 @@ export type WorkoutSession = {
   id: string;
   dateIso: string;
   checkedInAtIso: string | null;
+  templateId: string | null;
+  templateName: string | null;
+  muscleGroup: string | null;
   notes: string | null;
 };
 

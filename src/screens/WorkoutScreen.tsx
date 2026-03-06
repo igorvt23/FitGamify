@@ -14,12 +14,15 @@ export function WorkoutScreen() {
     if (!currentWorkout) {
       return { totalVolume: 0, avgIntensity: 0 };
     }
-    const totalVolume = currentWorkout.exercises.reduce((acc, item) => acc + item.weightKg * item.sets * item.reps, 0);
+    const totalVolume = currentWorkout.exercises.reduce((acc, item) => {
+      return acc + item.weightKg * estimateTotalReps(item.repScheme);
+    }, 0);
     const avgIntensity =
       currentWorkout.exercises.length === 0
         ? 0
         : currentWorkout.exercises.reduce((acc, item) => acc + item.intensity, 0) / currentWorkout.exercises.length;
-    return { totalVolume, avgIntensity };
+    const completedCount = currentWorkout.exercises.filter((item) => item.isCompleted).length;
+    return { totalVolume, avgIntensity, completedCount };
   }, [currentWorkout]);
 
   return (
@@ -49,9 +52,15 @@ export function WorkoutScreen() {
                   <MaterialCommunityIcons name={item.imageKey as never} size={18} color={isDark ? "#8AB4F8" : "#1D4ED8"} />
                 </View>
                 <Text style={[styles.exerciseTitle, { color: isDark ? "#E6EDF3" : "#0F172A" }]}>{item.name}</Text>
+                <Pressable
+                  style={[styles.checkButton, item.isCompleted && styles.checkButtonActive]}
+                  onPress={() => void saveExercise(item.id, item.weightKg, item.intensity, !item.isCompleted)}
+                >
+                  <MaterialCommunityIcons name={item.isCompleted ? "check-bold" : "check"} size={14} color="#FFFFFF" />
+                </Pressable>
               </View>
               <Text style={[styles.subtitle, { color: isDark ? "#9CA3AF" : "#6B7280" }]}>
-                {item.sets}x{item.reps}
+                {item.repScheme}
               </Text>
               <View style={styles.inputRow}>
                 <Text style={[styles.fieldLabel, { color: isDark ? "#A7B0BA" : "#4B5563" }]}>{t("workout.weight")} (kg)</Text>
@@ -69,7 +78,7 @@ export function WorkoutScreen() {
                   placeholderTextColor={isDark ? "#6B7280" : "#9CA3AF"}
                   onEndEditing={(event) => {
                     const weight = Number(event.nativeEvent.text || 0);
-                    void saveExercise(item.id, Number.isNaN(weight) ? 0 : weight, item.intensity);
+                    void saveExercise(item.id, Number.isNaN(weight) ? 0 : weight, item.intensity, item.isCompleted);
                   }}
                 />
               </View>
@@ -90,7 +99,7 @@ export function WorkoutScreen() {
                   onEndEditing={(event) => {
                     const intensity = Number(event.nativeEvent.text || 5);
                     const clamped = Math.max(1, Math.min(10, Number.isNaN(intensity) ? 5 : intensity));
-                    void saveExercise(item.id, item.weightKg, clamped);
+                    void saveExercise(item.id, item.weightKg, clamped, item.isCompleted);
                   }}
                 />
               </View>
@@ -103,6 +112,9 @@ export function WorkoutScreen() {
             </Text>
             <Text style={{ color: isDark ? "#E6EDF3" : "#111827", fontWeight: "600" }}>
               {t("workout.intensityAvg")}: {summary.avgIntensity.toFixed(1)}
+            </Text>
+            <Text style={{ color: isDark ? "#E6EDF3" : "#111827", fontWeight: "600" }}>
+              {t("workout.completedExercises")}: {summary.completedCount}/{currentWorkout.exercises.length}
             </Text>
           </View>
 
@@ -152,7 +164,19 @@ const styles = StyleSheet.create({
   },
   exerciseTitle: {
     fontWeight: "600",
-    fontSize: 16
+    fontSize: 16,
+    flex: 1
+  },
+  checkButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#64748B",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  checkButtonActive: {
+    backgroundColor: "#16A34A"
   },
   inputRow: {
     gap: 4
@@ -181,3 +205,21 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   }
 });
+
+function estimateTotalReps(repScheme: string) {
+  const chunks = repScheme.split(",");
+  let total = 0;
+
+  for (const raw of chunks) {
+    const item = raw.trim().toLowerCase();
+    const [setsRaw, repsRaw] = item.split("x");
+    const sets = Number(setsRaw);
+    const reps = Number(repsRaw);
+    if (Number.isNaN(sets) || Number.isNaN(reps)) {
+      continue;
+    }
+    total += sets * reps;
+  }
+
+  return total > 0 ? total : 40;
+}
