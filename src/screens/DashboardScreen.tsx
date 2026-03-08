@@ -1,9 +1,10 @@
-import React, { useMemo } from "react";
-import { Dimensions, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 
 import { useAppContext } from "../state/AppContext";
 import { useI18n } from "../i18n";
+import { WorkoutWithExercises } from "../types";
 
 export function DashboardScreen() {
   const { t } = useI18n();
@@ -19,6 +20,8 @@ export function DashboardScreen() {
   }, [completed]);
 
   const month = useMemo(() => buildMonthGrid(new Date(), completed), [completed]);
+  const [selectedDateIso, setSelectedDateIso] = useState(month.find((item) => item.completed)?.dateIso ?? month[0]?.dateIso ?? "");
+  const selectedSessions = useMemo(() => completed.filter((item) => item.dateIso === selectedDateIso), [completed, selectedDateIso]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -65,17 +68,54 @@ export function DashboardScreen() {
           ))}
         </View>
         <View style={styles.calendarGrid}>
-          {month.map((day, index) => (
-            <View key={`${day.dateIso}-${index}`} style={[styles.dayCell, !day.inMonth && styles.dayCellMuted]}>
-              <Text style={styles.dayNumber}>{day.day}</Text>
-              {day.completed ? (
-                <Text style={styles.dayBadge}>{day.muscleShort ? day.muscleShort : "✓"}</Text>
-              ) : (
-                <Text style={styles.dayBadgeEmpty}>-</Text>
-              )}
-            </View>
-          ))}
+          {month.map((day, index) => {
+            const isSelected = day.dateIso === selectedDateIso;
+            return (
+              <Pressable
+                key={`${day.dateIso}-${index}`}
+                style={[styles.dayCell, !day.inMonth && styles.dayCellMuted, isSelected && styles.dayCellSelected]}
+                onPress={() => setSelectedDateIso(day.dateIso)}
+              >
+                <Text style={styles.dayNumber}>{day.day}</Text>
+                {day.completed ? <Text style={styles.dayBadge}>{day.badge}</Text> : <Text style={styles.dayBadgeEmpty}>-</Text>}
+              </Pressable>
+            );
+          })}
         </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.calendarTitle}>
+          {t("dashboard.selectedDate")}: {selectedDateIso || "-"}
+        </Text>
+        {selectedSessions.length === 0 ? (
+          <Text>{t("dashboard.noSessionOnDay")}</Text>
+        ) : (
+          selectedSessions.map((session, index) => (
+            <View key={session.id} style={styles.historyCard}>
+              <Text style={styles.historyTitle}>
+                {t("workout.sessionLabel")} {index + 1}: {session.templateName ?? t("plans.defaultName")}
+              </Text>
+              <Text>{session.muscleGroup ?? t("plans.defaultMuscle")}</Text>
+              {session.exercises.map((exercise) => (
+                <View key={exercise.id} style={styles.historyExerciseBlock}>
+                  <Text style={styles.historyExercise}>
+                    {exercise.name} | {t("workout.plannedWeight")}: {exercise.plannedWeightKg}kg | {t("workout.currentWeight")}: {exercise.weightKg}kg
+                  </Text>
+                  <Text style={styles.historyExercise}>
+                    {exercise.weightKg > exercise.plannedWeightKg ? t("dashboard.weightIncreased") : t("dashboard.weightSameOrLower")}
+                  </Text>
+                  {exercise.setLogs.map((setItem, setIndex) => (
+                    <Text key={`${exercise.id}-${setIndex}`} style={styles.historyExercise}>
+                      {t("workout.set")} {setIndex + 1}: {t("workout.targetReps")} {setItem.targetReps} | {t("workout.actualReps")} {setItem.actualReps ?? "-"} |{" "}
+                      {t("workout.difficultyLabel")}: {setItem.difficulty ? t(`workout.difficulty.${setItem.difficulty}`) : "-"}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          ))
+        )}
       </View>
     </ScrollView>
   );
@@ -115,12 +155,16 @@ const styles = StyleSheet.create({
   },
   dayCell: {
     width: `${100 / 7}%`,
-    paddingVertical: 6,
+    paddingVertical: 8,
     alignItems: "center",
-    gap: 2
+    gap: 2,
+    borderRadius: 8
   },
   dayCellMuted: {
     opacity: 0.35
+  },
+  dayCellSelected: {
+    backgroundColor: "#DBEAFE"
   },
   dayNumber: {
     fontSize: 12
@@ -133,6 +177,21 @@ const styles = StyleSheet.create({
   dayBadgeEmpty: {
     fontSize: 10,
     color: "#9CA3AF"
+  },
+  historyCard: {
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    gap: 4
+  },
+  historyTitle: {
+    fontWeight: "700"
+  },
+  historyExercise: {
+    color: "#374151"
+  },
+  historyExerciseBlock: {
+    gap: 2
   }
 });
 
@@ -154,26 +213,33 @@ function estimateTotalReps(repScheme: string) {
   return total > 0 ? total : 40;
 }
 
-function buildMonthGrid(now: Date, completedSessions: Array<{ dateIso: string; muscleGroup: string | null }>) {
+function buildMonthGrid(now: Date, completedSessions: WorkoutWithExercises[]) {
   const year = now.getFullYear();
   const month = now.getMonth();
   const first = new Date(year, month, 1);
   const start = new Date(year, month, 1 - first.getDay());
+  const completedMap = new Map<string, WorkoutWithExercises[]>();
 
-  const completedMap = new Map(completedSessions.map((item) => [item.dateIso, item.muscleGroup ?? ""]));
-  const days: Array<{ dateIso: string; day: number; inMonth: boolean; completed: boolean; muscleShort: string }> = [];
+  for (const item of completedSessions) {
+    const list = completedMap.get(item.dateIso) ?? [];
+    list.push(item);
+    completedMap.set(item.dateIso, list);
+  }
+
+  const days: Array<{ dateIso: string; day: number; inMonth: boolean; completed: boolean; badge: string }> = [];
 
   for (let i = 0; i < 42; i += 1) {
     const current = new Date(start);
     current.setDate(start.getDate() + i);
     const dateIso = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
-    const muscle = completedMap.get(dateIso) ?? "";
+    const sessions = completedMap.get(dateIso) ?? [];
+    const badge = sessions.length > 1 ? `${sessions.length}x` : (sessions[0]?.muscleGroup ?? "").slice(0, 2).toUpperCase() || "OK";
     days.push({
       dateIso,
       day: current.getDate(),
       inMonth: current.getMonth() === month,
-      completed: completedMap.has(dateIso),
-      muscleShort: muscle.slice(0, 2).toUpperCase()
+      completed: sessions.length > 0,
+      badge
     });
   }
   return days;

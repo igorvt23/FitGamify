@@ -13,8 +13,18 @@ function AppShell() {
 
   useEffect(() => {
     const run = async () => {
-      await initDatabase();
-      await setupNotifications();
+      try {
+        await initDatabase();
+      } catch (error) {
+        console.warn("initDatabase failed", error);
+      }
+
+      try {
+        await setupNotifications();
+      } catch (error) {
+        console.warn("setupNotifications failed", error);
+      }
+
       await bootstrap();
     };
     void run();

@@ -3,10 +3,14 @@ import * as SQLite from "expo-sqlite";
 import {
   Achievement,
   CloudBackupPayload,
+  DifficultyLevel,
   Exercise,
+  ExerciseSetLog,
   ExerciseLibraryItem,
   TemplateExercise,
   UserProfile,
+  Weekday,
+  WorkoutScheduleMode,
   WorkoutSession,
   WorkoutTemplate,
   WorkoutWithExercises
@@ -19,7 +23,8 @@ export async function initDatabase() {
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS workout_sessions (
       id TEXT PRIMARY KEY NOT NULL,
-      date_iso TEXT NOT NULL UNIQUE,
+      date_iso TEXT NOT NULL,
+      session_index INTEGER NOT NULL DEFAULT 0,
       checked_in_at_iso TEXT,
       template_id TEXT,
       template_name TEXT,
@@ -31,10 +36,12 @@ export async function initDatabase() {
       session_id TEXT NOT NULL,
       name TEXT NOT NULL,
       rep_scheme TEXT NOT NULL DEFAULT '4x10',
+      planned_weight_kg REAL NOT NULL DEFAULT 0,
       weight_kg REAL NOT NULL DEFAULT 0,
       intensity REAL NOT NULL DEFAULT 5,
       is_completed INTEGER NOT NULL DEFAULT 0,
       image_key TEXT NOT NULL,
+      set_logs TEXT NOT NULL DEFAULT '[]',
       FOREIGN KEY(session_id) REFERENCES workout_sessions(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS achievements (
@@ -67,6 +74,7 @@ export async function initDatabase() {
       name TEXT NOT NULL,
       muscle_group TEXT NOT NULL,
       order_index INTEGER NOT NULL DEFAULT 0,
+      assigned_weekdays TEXT NOT NULL DEFAULT '',
       created_at_iso TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS template_exercises (
@@ -78,6 +86,10 @@ export async function initDatabase() {
       image_key TEXT NOT NULL,
       FOREIGN KEY(template_id) REFERENCES workout_templates(id) ON DELETE CASCADE
     );
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL
+    );
   `);
 
   await runMigration();
@@ -86,35 +98,97 @@ export async function initDatabase() {
 }
 
 export async function getTodayWorkout(): Promise<WorkoutWithExercises | null> {
-  return getWorkoutByDate(isoDateOnly(new Date()));
+  const workouts = await getWorkoutsByDate(isoDateOnly(new Date()));
+  return workouts[0] ?? null;
 }
 
 export async function createTodayWorkoutIfMissing() {
   const todayIso = isoDateOnly(new Date());
-  const existing = await getWorkoutByDate(todayIso);
-  if (existing) {
-    return existing;
+  const existing = await getWorkoutsByDate(todayIso);
+  if (existing.length > 0) {
+    return existing[0];
   }
 
-  const nextTemplate = await getNextTemplateInSequence();
-  const templateExercises = nextTemplate ? await getTemplateExercises(nextTemplate.id) : [];
+  return createWorkoutForDate(todayIso);
+}
+
+export async function getTodayWorkouts(): Promise<WorkoutWithExercises[]> {
+  return getWorkoutsByDate(isoDateOnly(new Date()));
+}
+
+export async function getScheduleMode(): Promise<WorkoutScheduleMode> {
+  const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key = 'workout_schedule_mode' LIMIT 1");
+  return row?.value === "weekday" ? "weekday" : "sequence";
+}
+
+export async function setScheduleMode(mode: WorkoutScheduleMode) {
+  await db.runAsync(
+    "INSERT INTO app_settings (key, value) VALUES ('workout_schedule_mode', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    mode
+  );
+}
+
+export async function getSuggestedTemplatesForDate(dateIso: string): Promise<WorkoutTemplate[]> {
+  const mode = await getScheduleMode();
+  if (mode === "weekday") {
+    const weekday = getWeekdayFromIsoDate(dateIso);
+    const templates = await getTemplates();
+    return templates.filter((item) => item.assignedWeekdays.includes(weekday));
+  }
+
+  const next = await getNextTemplateInSequence();
+  return next ? [next] : [];
+}
+
+export async function createWorkoutForDate(dateIso: string, templateId?: string | null): Promise<WorkoutWithExercises> {
+  const template = templateId ? await getTemplateById(templateId) : await resolveNextTemplateForDate(dateIso);
+  const templateExercises = template ? await getTemplateExercises(template.id) : [];
   const sessionId = cryptoRandomId();
+  const sessionIndex = await getNextSessionIndexForDate(dateIso);
 
   await db.runAsync(
-    "INSERT INTO workout_sessions (id, date_iso, checked_in_at_iso, template_id, template_name, muscle_group, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO workout_sessions (id, date_iso, session_index, checked_in_at_iso, template_id, template_name, muscle_group, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     sessionId,
-    todayIso,
+    dateIso,
+    sessionIndex,
     null,
-    nextTemplate?.id ?? null,
-    nextTemplate?.name ?? null,
-    nextTemplate?.muscleGroup ?? null,
+    template?.id ?? null,
+    template?.name ?? null,
+    template?.muscleGroup ?? null,
     ""
   );
 
   const fallbackExercises: Array<Omit<Exercise, "id">> = [
-    { name: "Agachamento", repScheme: "4x10", weightKg: 0, intensity: 5, isCompleted: false, imageKey: "human-male-squat" },
-    { name: "Supino", repScheme: "4x8", weightKg: 0, intensity: 5, isCompleted: false, imageKey: "human-male-board" },
-    { name: "Remada", repScheme: "3x12", weightKg: 0, intensity: 5, isCompleted: false, imageKey: "rowing" }
+    {
+      name: "Agachamento",
+      repScheme: "4x10",
+      plannedWeightKg: 0,
+      weightKg: 0,
+      intensity: 5,
+      isCompleted: false,
+      imageKey: "human-male-squat",
+      setLogs: buildInitialSetLogs("4x10")
+    },
+    {
+      name: "Supino",
+      repScheme: "4x8",
+      plannedWeightKg: 0,
+      weightKg: 0,
+      intensity: 5,
+      isCompleted: false,
+      imageKey: "human-male-board",
+      setLogs: buildInitialSetLogs("4x8")
+    },
+    {
+      name: "Remada",
+      repScheme: "3x12",
+      plannedWeightKg: 0,
+      weightKg: 0,
+      intensity: 5,
+      isCompleted: false,
+      imageKey: "rowing",
+      setLogs: buildInitialSetLogs("3x12")
+    }
   ];
 
   const sourceExercises =
@@ -122,29 +196,37 @@ export async function createTodayWorkoutIfMissing() {
       ? templateExercises.map((item) => ({
           name: item.exerciseName,
           repScheme: normalizeRepScheme(item.repScheme),
+          plannedWeightKg: item.defaultWeightKg,
           weightKg: item.defaultWeightKg,
           intensity: 5,
           isCompleted: false,
-          imageKey: item.imageKey
+          imageKey: item.imageKey,
+          setLogs: buildInitialSetLogs(item.repScheme)
         }))
       : fallbackExercises;
 
   for (const entry of sourceExercises) {
     const latest = await getLatestExerciseMetricsByName(entry.name);
     await db.runAsync(
-      "INSERT INTO exercises (id, session_id, name, rep_scheme, weight_kg, intensity, is_completed, image_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO exercises (id, session_id, name, rep_scheme, planned_weight_kg, weight_kg, intensity, is_completed, image_key, set_logs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       cryptoRandomId(),
       sessionId,
       entry.name,
       entry.repScheme,
+      entry.plannedWeightKg,
       latest?.weightKg ?? entry.weightKg,
-      latest?.intensity ?? entry.intensity,
+      latest?.intensity ?? getIntensityFromSetLogs(entry.setLogs) ?? entry.intensity,
       entry.isCompleted ? 1 : 0,
-      entry.imageKey
+      entry.imageKey,
+      JSON.stringify(entry.setLogs)
     );
   }
 
-  return getWorkoutByDate(todayIso);
+  const created = await getWorkoutById(sessionId);
+  if (!created) {
+    throw new Error("Nao foi possivel carregar o treino criado.");
+  }
+  return created;
 }
 
 export async function updateExerciseMetrics(exerciseId: string, weightKg: number, intensity: number, isCompleted: boolean) {
@@ -157,13 +239,53 @@ export async function updateExerciseMetrics(exerciseId: string, weightKg: number
   );
 }
 
+export async function saveExerciseExecution(
+  exerciseId: string,
+  params: {
+    weightKg: number;
+    setLogs: ExerciseSetLog[];
+    isCompleted: boolean;
+  }
+) {
+  const normalizedSetLogs = normalizeSetLogs(params.setLogs);
+  const intensity = getIntensityFromSetLogs(normalizedSetLogs) ?? 5;
+  const exercise = await db.getFirstAsync<{ plannedWeightKg: number; name: string; sessionId: string }>(
+    "SELECT planned_weight_kg as plannedWeightKg, name, session_id as sessionId FROM exercises WHERE id = ? LIMIT 1",
+    exerciseId
+  );
+
+  await db.runAsync(
+    "UPDATE exercises SET weight_kg = ?, intensity = ?, is_completed = ?, set_logs = ? WHERE id = ?",
+    Math.max(0, params.weightKg),
+    intensity,
+    params.isCompleted ? 1 : 0,
+    JSON.stringify(normalizedSetLogs),
+    exerciseId
+  );
+
+  if (exercise && params.weightKg > exercise.plannedWeightKg) {
+    const session = await db.getFirstAsync<{ templateId: string | null }>(
+      "SELECT template_id as templateId FROM workout_sessions WHERE id = ? LIMIT 1",
+      exercise.sessionId
+    );
+    if (session?.templateId) {
+      await db.runAsync(
+        "UPDATE template_exercises SET default_weight_kg = ? WHERE template_id = ? AND exercise_name = ?",
+        Math.max(0, params.weightKg),
+        session.templateId,
+        exercise.name
+      );
+    }
+  }
+}
+
 export async function checkInTodayWorkout(sessionId: string) {
   await db.runAsync("UPDATE workout_sessions SET checked_in_at_iso = ? WHERE id = ?", new Date().toISOString(), sessionId);
 }
 
 export async function getAllSessions(): Promise<WorkoutWithExercises[]> {
   const sessions = await db.getAllAsync<WorkoutSession>(
-    "SELECT id, date_iso as dateIso, checked_in_at_iso as checkedInAtIso, template_id as templateId, template_name as templateName, muscle_group as muscleGroup, notes FROM workout_sessions ORDER BY date_iso ASC"
+    "SELECT id, date_iso as dateIso, session_index as sessionIndex, checked_in_at_iso as checkedInAtIso, template_id as templateId, template_name as templateName, muscle_group as muscleGroup, notes FROM workout_sessions ORDER BY date_iso ASC, session_index ASC"
   );
   const result: WorkoutWithExercises[] = [];
   for (const session of sessions) {
@@ -246,7 +368,12 @@ export async function createExerciseLibraryItem(name: string, imageKey: string) 
 
 export async function getTemplates(): Promise<WorkoutTemplate[]> {
   return db.getAllAsync<WorkoutTemplate>(
-    "SELECT id, name, muscle_group as muscleGroup, order_index as orderIndex, created_at_iso as createdAtIso FROM workout_templates ORDER BY order_index ASC, created_at_iso ASC"
+    "SELECT id, name, muscle_group as muscleGroup, order_index as orderIndex, assigned_weekdays as assignedWeekdaysRaw, created_at_iso as createdAtIso FROM workout_templates ORDER BY order_index ASC, created_at_iso ASC"
+  ).then((rows) =>
+    rows.map((item) => ({
+      ...item,
+      assignedWeekdays: parseWeekdays((item as WorkoutTemplate & { assignedWeekdaysRaw?: string }).assignedWeekdaysRaw)
+    }))
   );
 }
 
@@ -257,17 +384,18 @@ export async function getTemplateExercises(templateId: string): Promise<Template
   );
 }
 
-export async function createTemplate(name: string, muscleGroup: string): Promise<string> {
+export async function createTemplate(name: string, muscleGroup: string, assignedWeekdays: Weekday[] = []): Promise<string> {
   const templates = await getTemplates();
   const templateId = cryptoRandomId();
   const orderIndex = templates.length;
 
   await db.runAsync(
-    "INSERT INTO workout_templates (id, name, muscle_group, order_index, created_at_iso) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO workout_templates (id, name, muscle_group, order_index, assigned_weekdays, created_at_iso) VALUES (?, ?, ?, ?, ?, ?)",
     templateId,
     name.trim(),
     muscleGroup.trim(),
     orderIndex,
+    serializeWeekdays(assignedWeekdays),
     new Date().toISOString()
   );
   return templateId;
@@ -295,8 +423,14 @@ export async function addExerciseToTemplateWithWeight(
   );
 }
 
-export async function updateTemplate(templateId: string, name: string, muscleGroup: string) {
-  await db.runAsync("UPDATE workout_templates SET name = ?, muscle_group = ? WHERE id = ?", name.trim(), muscleGroup.trim(), templateId);
+export async function updateTemplate(templateId: string, name: string, muscleGroup: string, assignedWeekdays: Weekday[]) {
+  await db.runAsync(
+    "UPDATE workout_templates SET name = ?, muscle_group = ?, assigned_weekdays = ? WHERE id = ?",
+    name.trim(),
+    muscleGroup.trim(),
+    serializeWeekdays(assignedWeekdays),
+    templateId
+  );
 }
 
 export async function deleteTemplate(templateId: string) {
@@ -350,16 +484,16 @@ export async function reorderTemplate(templateId: string, direction: "up" | "dow
 }
 
 export async function getTodayTemplate(): Promise<{ template: WorkoutTemplate | null; exercises: TemplateExercise[] }> {
-  const todayWorkout = await getTodayWorkout();
-  if (todayWorkout?.templateId) {
-    const template = await getTemplateById(todayWorkout.templateId);
+  const todayWorkouts = await getTodayWorkouts();
+  if (todayWorkouts[0]?.templateId) {
+    const template = await getTemplateById(todayWorkouts[0].templateId);
     if (template) {
       const exercises = await getTemplateExercises(template.id);
       return { template, exercises };
     }
   }
 
-  const template = await getNextTemplateInSequence();
+  const [template] = await getSuggestedTemplatesForDate(isoDateOnly(new Date()));
   if (!template) {
     return { template: null, exercises: [] };
   }
@@ -368,10 +502,11 @@ export async function getTodayTemplate(): Promise<{ template: WorkoutTemplate | 
 }
 
 export async function exportBackupPayload(): Promise<CloudBackupPayload> {
-  const [workouts, achievements, profile, templates, exerciseLibrary] = await Promise.all([
+  const [workouts, achievements, profile, scheduleMode, templates, exerciseLibrary] = await Promise.all([
     getAllSessions(),
     getAchievements(),
     getProfileOrNull(),
+    getScheduleMode(),
     getTemplates(),
     getExerciseLibrary()
   ]);
@@ -386,6 +521,7 @@ export async function exportBackupPayload(): Promise<CloudBackupPayload> {
     workouts,
     achievements,
     profile,
+    scheduleMode,
     templates,
     templateExercises,
     exerciseLibrary
@@ -415,9 +551,10 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
 
   for (const item of payload.workouts) {
     await db.runAsync(
-      "INSERT INTO workout_sessions (id, date_iso, checked_in_at_iso, template_id, template_name, muscle_group, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO workout_sessions (id, date_iso, session_index, checked_in_at_iso, template_id, template_name, muscle_group, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       item.id,
       item.dateIso,
+      item.sessionIndex ?? 0,
       item.checkedInAtIso,
       item.templateId ?? null,
       item.templateName ?? null,
@@ -426,15 +563,17 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
     );
     for (const exercise of item.exercises) {
       await db.runAsync(
-        "INSERT INTO exercises (id, session_id, name, rep_scheme, weight_kg, intensity, is_completed, image_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO exercises (id, session_id, name, rep_scheme, planned_weight_kg, weight_kg, intensity, is_completed, image_key, set_logs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         exercise.id,
         item.id,
         exercise.name,
         normalizeRepScheme(exercise.repScheme ?? legacyRepSchemeFromExercise(exercise as unknown as LegacyExercise)),
+        exercise.plannedWeightKg ?? exercise.weightKg,
         exercise.weightKg,
         exercise.intensity,
         exercise.isCompleted ? 1 : 0,
-        exercise.imageKey
+        exercise.imageKey,
+        JSON.stringify(normalizeSetLogs(exercise.setLogs ?? buildInitialSetLogs(exercise.repScheme)))
       );
     }
   }
@@ -443,14 +582,17 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
     await insertAchievement(item);
   }
 
+  await setScheduleMode(payload.scheduleMode ?? "sequence");
+
   for (let index = 0; index < payload.templates.length; index += 1) {
     const item = payload.templates[index] as WorkoutTemplate & { weekday?: number };
     await db.runAsync(
-      "INSERT INTO workout_templates (id, name, muscle_group, order_index, created_at_iso) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO workout_templates (id, name, muscle_group, order_index, assigned_weekdays, created_at_iso) VALUES (?, ?, ?, ?, ?, ?)",
       item.id,
       item.name,
       item.muscleGroup,
       item.orderIndex ?? item.weekday ?? index,
+      serializeWeekdays(item.assignedWeekdays ?? (typeof item.weekday === "number" ? [item.weekday as Weekday] : [])),
       item.createdAtIso
     );
   }
@@ -482,10 +624,23 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
   await ensureDefaultTemplates();
 }
 
-async function getWorkoutByDate(dateIso: string): Promise<WorkoutWithExercises | null> {
-  const session = await db.getFirstAsync<WorkoutSession>(
-    "SELECT id, date_iso as dateIso, checked_in_at_iso as checkedInAtIso, template_id as templateId, template_name as templateName, muscle_group as muscleGroup, notes FROM workout_sessions WHERE date_iso = ? LIMIT 1",
+export async function getWorkoutsByDate(dateIso: string): Promise<WorkoutWithExercises[]> {
+  const sessions = await db.getAllAsync<WorkoutSession>(
+    "SELECT id, date_iso as dateIso, session_index as sessionIndex, checked_in_at_iso as checkedInAtIso, template_id as templateId, template_name as templateName, muscle_group as muscleGroup, notes FROM workout_sessions WHERE date_iso = ? ORDER BY session_index ASC",
     dateIso
+  );
+  const result: WorkoutWithExercises[] = [];
+  for (const session of sessions) {
+    const exercises = await getExercisesBySessionId(session.id);
+    result.push({ ...session, exercises });
+  }
+  return result;
+}
+
+async function getWorkoutById(sessionId: string): Promise<WorkoutWithExercises | null> {
+  const session = await db.getFirstAsync<WorkoutSession>(
+    "SELECT id, date_iso as dateIso, session_index as sessionIndex, checked_in_at_iso as checkedInAtIso, template_id as templateId, template_name as templateName, muscle_group as muscleGroup, notes FROM workout_sessions WHERE id = ? LIMIT 1",
+    sessionId
   );
   if (!session) {
     return null;
@@ -496,14 +651,19 @@ async function getWorkoutByDate(dateIso: string): Promise<WorkoutWithExercises |
 
 async function getExercisesBySessionId(sessionId: string): Promise<Exercise[]> {
   const rows = await db.getAllAsync<
-    Omit<Exercise, "isCompleted"> & {
+    Omit<Exercise, "isCompleted" | "setLogs"> & {
       isCompleted: number;
+      setLogsRaw: string;
     }
   >(
-    "SELECT id, name, rep_scheme as repScheme, weight_kg as weightKg, intensity, is_completed as isCompleted, image_key as imageKey FROM exercises WHERE session_id = ? ORDER BY rowid ASC",
+    "SELECT id, name, rep_scheme as repScheme, planned_weight_kg as plannedWeightKg, weight_kg as weightKg, intensity, is_completed as isCompleted, image_key as imageKey, set_logs as setLogsRaw FROM exercises WHERE session_id = ? ORDER BY rowid ASC",
     sessionId
   );
-  return rows.map((entry) => ({ ...entry, isCompleted: Boolean(entry.isCompleted) }));
+  return rows.map((entry) => ({
+    ...entry,
+    isCompleted: Boolean(entry.isCompleted),
+    setLogs: parseSetLogs(entry.setLogsRaw, entry.repScheme)
+  }));
 }
 
 async function getProfileOrNull(): Promise<UserProfile | null> {
@@ -515,12 +675,15 @@ async function getProfileOrNull(): Promise<UserProfile | null> {
 }
 
 async function getTemplateById(id: string): Promise<WorkoutTemplate | null> {
-  return (
-    (await db.getFirstAsync<WorkoutTemplate>(
-      "SELECT id, name, muscle_group as muscleGroup, order_index as orderIndex, created_at_iso as createdAtIso FROM workout_templates WHERE id = ? LIMIT 1",
+  const item =
+    (await db.getFirstAsync<WorkoutTemplate & { assignedWeekdaysRaw?: string }>(
+      "SELECT id, name, muscle_group as muscleGroup, order_index as orderIndex, assigned_weekdays as assignedWeekdaysRaw, created_at_iso as createdAtIso FROM workout_templates WHERE id = ? LIMIT 1",
       id
-    )) ?? null
-  );
+    )) ?? null;
+  if (!item) {
+    return null;
+  }
+  return { ...item, assignedWeekdays: parseWeekdays(item.assignedWeekdaysRaw) };
 }
 
 async function getNextTemplateInSequence(): Promise<WorkoutTemplate | null> {
@@ -542,6 +705,17 @@ async function getNextTemplateInSequence(): Promise<WorkoutTemplate | null> {
     return templates[0];
   }
   return templates[(currentIndex + 1) % templates.length];
+}
+
+async function resolveNextTemplateForDate(dateIso: string): Promise<WorkoutTemplate | null> {
+  const mode = await getScheduleMode();
+  if (mode === "weekday") {
+    const workouts = await getWorkoutsByDate(dateIso);
+    const existingTemplateIds = new Set(workouts.map((item) => item.templateId).filter(Boolean));
+    const suggested = await getSuggestedTemplatesForDate(dateIso);
+    return suggested.find((item) => !existingTemplateIds.has(item.id)) ?? suggested[0] ?? null;
+  }
+  return getNextTemplateInSequence();
 }
 
 async function persistTemplateOrder(items: WorkoutTemplate[]) {
@@ -613,23 +787,31 @@ async function ensureDefaultTemplates() {
 }
 
 async function runMigration() {
+  await recreateWorkoutSessionsTableIfNeeded();
+
   // Columns added for old local databases.
   await addColumnIfMissing("workout_sessions", "template_id", "TEXT");
   await addColumnIfMissing("workout_sessions", "template_name", "TEXT");
   await addColumnIfMissing("workout_sessions", "muscle_group", "TEXT");
+  await addColumnIfMissing("workout_sessions", "session_index", "INTEGER NOT NULL DEFAULT 0");
   await addColumnIfMissing("workout_templates", "order_index", "INTEGER NOT NULL DEFAULT 0");
+  await addColumnIfMissing("workout_templates", "assigned_weekdays", "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing("template_exercises", "rep_scheme", "TEXT NOT NULL DEFAULT '4x10'");
   await addColumnIfMissing("template_exercises", "default_weight_kg", "REAL NOT NULL DEFAULT 0");
   await addColumnIfMissing("exercises", "rep_scheme", "TEXT NOT NULL DEFAULT '4x10'");
+  await addColumnIfMissing("exercises", "planned_weight_kg", "REAL NOT NULL DEFAULT 0");
   await addColumnIfMissing("exercises", "is_completed", "INTEGER NOT NULL DEFAULT 0");
+  await addColumnIfMissing("exercises", "set_logs", "TEXT NOT NULL DEFAULT '[]'");
 
   // Copy legacy sets/reps into rep_scheme if needed.
   await db.runAsync(
     "UPDATE exercises SET rep_scheme = CAST(sets AS TEXT) || 'x' || CAST(reps AS TEXT) WHERE (rep_scheme IS NULL OR rep_scheme = '' OR rep_scheme = '4x10') AND sets IS NOT NULL AND reps IS NOT NULL"
   ).catch(() => undefined);
+  await db.runAsync("UPDATE exercises SET planned_weight_kg = weight_kg WHERE planned_weight_kg IS NULL OR planned_weight_kg = 0").catch(() => undefined);
   await db.runAsync(
     "UPDATE template_exercises SET rep_scheme = CAST(sets AS TEXT) || 'x' || CAST(reps AS TEXT) WHERE (rep_scheme IS NULL OR rep_scheme = '' OR rep_scheme = '4x10') AND sets IS NOT NULL AND reps IS NOT NULL"
   ).catch(() => undefined);
+  await backfillExerciseSetLogs();
 
   // Migrate legacy weekday ordering into sequence ordering when possible.
   const tableInfo = await db.getAllAsync<{ name: string }>("PRAGMA table_info(workout_templates)");
@@ -644,6 +826,8 @@ async function runMigration() {
   } else {
     await normalizeTemplateOrder();
   }
+
+  await setScheduleMode(await getScheduleMode());
 }
 
 async function addColumnIfMissing(tableName: string, columnName: string, definition: string) {
@@ -664,9 +848,148 @@ async function getLatestExerciseMetricsByName(name: string): Promise<{ weightKg:
   );
 }
 
+async function backfillExerciseSetLogs() {
+  const rows = await db.getAllAsync<{ id: string; repScheme: string; setLogsRaw: string | null }>(
+    "SELECT id, rep_scheme as repScheme, set_logs as setLogsRaw FROM exercises"
+  );
+  for (const item of rows) {
+    const parsed = parseSetLogs(item.setLogsRaw, item.repScheme);
+    await db.runAsync("UPDATE exercises SET set_logs = ? WHERE id = ?", JSON.stringify(parsed), item.id);
+  }
+}
+
+async function recreateWorkoutSessionsTableIfNeeded() {
+  const indexes = await db.getAllAsync<{ name: string; unique: number }>("PRAGMA index_list(workout_sessions)");
+  let hasDateUniqueIndex = false;
+  for (const item of indexes) {
+    if (!item.unique) {
+      continue;
+    }
+    const columns = await db.getAllAsync<{ name: string }>(`PRAGMA index_info(${item.name})`);
+    if (columns.some((column) => column.name === "date_iso")) {
+      hasDateUniqueIndex = true;
+      break;
+    }
+  }
+  if (!hasDateUniqueIndex) {
+    return;
+  }
+
+  await db.execAsync(`
+    ALTER TABLE workout_sessions RENAME TO workout_sessions_legacy;
+    CREATE TABLE workout_sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      date_iso TEXT NOT NULL,
+      session_index INTEGER NOT NULL DEFAULT 0,
+      checked_in_at_iso TEXT,
+      template_id TEXT,
+      template_name TEXT,
+      muscle_group TEXT,
+      notes TEXT
+    );
+    INSERT INTO workout_sessions (id, date_iso, session_index, checked_in_at_iso, template_id, template_name, muscle_group, notes)
+    SELECT id, date_iso, 0, checked_in_at_iso, template_id, template_name, muscle_group, notes
+    FROM workout_sessions_legacy;
+    DROP TABLE workout_sessions_legacy;
+  `);
+}
+
+async function getNextSessionIndexForDate(dateIso: string) {
+  const row =
+    (await db.getFirstAsync<{ nextIndex: number }>(
+      "SELECT COALESCE(MAX(session_index), -1) + 1 as nextIndex FROM workout_sessions WHERE date_iso = ?",
+      dateIso
+    )) ?? { nextIndex: 0 };
+  return row.nextIndex;
+}
+
+function serializeWeekdays(weekdays: Weekday[]) {
+  return [...new Set(weekdays)].sort((a, b) => a - b).join(",");
+}
+
+function parseWeekdays(raw: string | null | undefined): Weekday[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(",")
+    .map((item) => Number(item))
+    .filter((item): item is Weekday => Number.isInteger(item) && item >= 0 && item <= 6);
+}
+
+function getWeekdayFromIsoDate(dateIso: string): Weekday {
+  return new Date(`${dateIso}T12:00:00`).getDay() as Weekday;
+}
+
 function normalizeRepScheme(value: string | null | undefined) {
   const normalized = (value ?? "").replace(/\s+/g, "");
   return normalized.length > 0 ? normalized : "4x10";
+}
+
+function buildInitialSetLogs(repScheme: string | null | undefined): ExerciseSetLog[] {
+  const normalized = normalizeRepScheme(repScheme);
+  const chunks = normalized.split(",");
+  const result: ExerciseSetLog[] = [];
+  for (const chunk of chunks) {
+    const [setsRaw, repsRaw] = chunk.trim().toLowerCase().split("x");
+    const sets = Number(setsRaw);
+    const reps = Number(repsRaw);
+    if (Number.isNaN(sets) || Number.isNaN(reps) || sets <= 0 || reps <= 0) {
+      continue;
+    }
+    for (let index = 0; index < sets; index += 1) {
+      result.push({ targetReps: reps, actualReps: null, difficulty: null });
+    }
+  }
+  return result.length > 0 ? result : [{ targetReps: 10, actualReps: null, difficulty: null }];
+}
+
+function normalizeSetLogs(setLogs: ExerciseSetLog[]): ExerciseSetLog[] {
+  return setLogs.map((item) => ({
+    targetReps: Math.max(0, Number(item.targetReps) || 0),
+    actualReps: item.actualReps == null ? null : Math.max(0, Number(item.actualReps) || 0),
+    difficulty: normalizeDifficulty(item.difficulty)
+  }));
+}
+
+function parseSetLogs(raw: string | null | undefined, repScheme: string): ExerciseSetLog[] {
+  try {
+    const parsed = JSON.parse(raw ?? "[]");
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return normalizeSetLogs(parsed as ExerciseSetLog[]);
+    }
+  } catch {
+    return buildInitialSetLogs(repScheme);
+  }
+  return buildInitialSetLogs(repScheme);
+}
+
+function normalizeDifficulty(value: DifficultyLevel | string | null | undefined): DifficultyLevel | null {
+  if (value === "easy" || value === "medium" || value === "hard") {
+    return value;
+  }
+  return null;
+}
+
+function getIntensityFromSetLogs(setLogs: ExerciseSetLog[]): number | null {
+  const values = setLogs
+    .map((item) => {
+      if (item.difficulty === "easy") {
+        return 3;
+      }
+      if (item.difficulty === "medium") {
+        return 6;
+      }
+      if (item.difficulty === "hard") {
+        return 9;
+      }
+      return null;
+    })
+    .filter((item): item is 3 | 6 | 9 => item !== null);
+  if (values.length === 0) {
+    return null;
+  }
+  return values.reduce((acc, item) => acc + item, 0) / values.length;
 }
 
 function isoDateOnly(date: Date) {

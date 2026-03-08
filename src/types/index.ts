@@ -1,14 +1,24 @@
 export type AppTheme = "light" | "dark" | "system";
 export type AppLanguage = "pt-BR" | "en";
 
+export type DifficultyLevel = "easy" | "medium" | "hard";
+
+export type ExerciseSetLog = {
+  targetReps: number;
+  actualReps: number | null;
+  difficulty: DifficultyLevel | null;
+};
+
 export type Exercise = {
   id: string;
   name: string;
   repScheme: string;
+  plannedWeightKg: number;
   weightKg: number;
   intensity: number;
   isCompleted: boolean;
   imageKey: string;
+  setLogs: ExerciseSetLog[];
 };
 
 export type ExerciseLibraryItem = {
@@ -19,12 +29,14 @@ export type ExerciseLibraryItem = {
 };
 
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type WorkoutScheduleMode = "sequence" | "weekday";
 
 export type WorkoutTemplate = {
   id: string;
   name: string;
   muscleGroup: string;
   orderIndex: number;
+  assignedWeekdays: Weekday[];
   createdAtIso: string;
 };
 
@@ -40,6 +52,7 @@ export type TemplateExercise = {
 export type WorkoutSession = {
   id: string;
   dateIso: string;
+  sessionIndex: number;
   checkedInAtIso: string | null;
   templateId: string | null;
   templateName: string | null;
@@ -96,6 +109,7 @@ export type CloudBackupPayload = {
   workouts: WorkoutWithExercises[];
   achievements: Achievement[];
   profile: UserProfile | null;
+  scheduleMode: WorkoutScheduleMode;
   templates: WorkoutTemplate[];
   templateExercises: TemplateExercise[];
   exerciseLibrary: ExerciseLibraryItem[];

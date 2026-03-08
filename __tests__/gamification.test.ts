@@ -7,6 +7,7 @@ function buildCompletedSessions(count: number): WorkoutWithExercises[] {
   return Array.from({ length: count }).map((_, index) => ({
     id: `s-${index}`,
     dateIso: `2026-03-${String(index + 1).padStart(2, "0")}`,
+    sessionIndex: 0,
     checkedInAtIso: "2026-03-01T10:00:00.000Z",
     templateId: null,
     templateName: null,
