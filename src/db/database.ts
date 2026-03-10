@@ -39,6 +39,7 @@ export async function initDatabase() {
       planned_weight_kg REAL NOT NULL DEFAULT 0,
       weight_kg REAL NOT NULL DEFAULT 0,
       intensity REAL NOT NULL DEFAULT 5,
+      anxiety_level INTEGER,
       is_completed INTEGER NOT NULL DEFAULT 0,
       image_key TEXT NOT NULL,
       set_logs TEXT NOT NULL DEFAULT '[]',
@@ -165,6 +166,7 @@ export async function createWorkoutForDate(dateIso: string, templateId?: string 
       plannedWeightKg: 0,
       weightKg: 0,
       intensity: 5,
+      anxietyLevel: null,
       isCompleted: false,
       imageKey: "human-male-squat",
       setLogs: buildInitialSetLogs("4x10")
@@ -175,6 +177,7 @@ export async function createWorkoutForDate(dateIso: string, templateId?: string 
       plannedWeightKg: 0,
       weightKg: 0,
       intensity: 5,
+      anxietyLevel: null,
       isCompleted: false,
       imageKey: "human-male-board",
       setLogs: buildInitialSetLogs("4x8")
@@ -185,6 +188,7 @@ export async function createWorkoutForDate(dateIso: string, templateId?: string 
       plannedWeightKg: 0,
       weightKg: 0,
       intensity: 5,
+      anxietyLevel: null,
       isCompleted: false,
       imageKey: "rowing",
       setLogs: buildInitialSetLogs("3x12")
@@ -199,6 +203,7 @@ export async function createWorkoutForDate(dateIso: string, templateId?: string 
           plannedWeightKg: item.defaultWeightKg,
           weightKg: item.defaultWeightKg,
           intensity: 5,
+          anxietyLevel: null,
           isCompleted: false,
           imageKey: item.imageKey,
           setLogs: buildInitialSetLogs(item.repScheme)
@@ -208,7 +213,7 @@ export async function createWorkoutForDate(dateIso: string, templateId?: string 
   for (const entry of sourceExercises) {
     const latest = await getLatestExerciseMetricsByName(entry.name);
     await db.runAsync(
-      "INSERT INTO exercises (id, session_id, name, rep_scheme, planned_weight_kg, weight_kg, intensity, is_completed, image_key, set_logs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO exercises (id, session_id, name, rep_scheme, planned_weight_kg, weight_kg, intensity, anxiety_level, is_completed, image_key, set_logs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       cryptoRandomId(),
       sessionId,
       entry.name,
@@ -216,6 +221,7 @@ export async function createWorkoutForDate(dateIso: string, templateId?: string 
       entry.plannedWeightKg,
       latest?.weightKg ?? entry.weightKg,
       latest?.intensity ?? getIntensityFromSetLogs(entry.setLogs) ?? entry.intensity,
+      entry.anxietyLevel,
       entry.isCompleted ? 1 : 0,
       entry.imageKey,
       JSON.stringify(entry.setLogs)
@@ -244,6 +250,7 @@ export async function saveExerciseExecution(
   params: {
     weightKg: number;
     setLogs: ExerciseSetLog[];
+    anxietyLevel: number | null;
     isCompleted: boolean;
   }
 ) {
@@ -255,9 +262,10 @@ export async function saveExerciseExecution(
   );
 
   await db.runAsync(
-    "UPDATE exercises SET weight_kg = ?, intensity = ?, is_completed = ?, set_logs = ? WHERE id = ?",
+    "UPDATE exercises SET weight_kg = ?, intensity = ?, anxiety_level = ?, is_completed = ?, set_logs = ? WHERE id = ?",
     Math.max(0, params.weightKg),
     intensity,
+    params.anxietyLevel == null ? null : Math.max(0, Math.min(10, Math.round(params.anxietyLevel))),
     params.isCompleted ? 1 : 0,
     JSON.stringify(normalizedSetLogs),
     exerciseId
@@ -384,17 +392,22 @@ export async function getTemplateExercises(templateId: string): Promise<Template
   );
 }
 
-export async function createTemplate(name: string, muscleGroup: string, assignedWeekdays: Weekday[] = []): Promise<string> {
+export async function createTemplate(name: string, muscleGroup: string, assignedWeekdays: Weekday[] = [], orderIndex?: number): Promise<string> {
   const templates = await getTemplates();
   const templateId = cryptoRandomId();
-  const orderIndex = templates.length;
+  const normalizedOrderIndex =
+    typeof orderIndex === "number" && Number.isFinite(orderIndex) ? Math.max(0, Math.min(templates.length, Math.floor(orderIndex))) : templates.length;
+
+  if (normalizedOrderIndex < templates.length) {
+    await db.runAsync("UPDATE workout_templates SET order_index = order_index + 1 WHERE order_index >= ?", normalizedOrderIndex);
+  }
 
   await db.runAsync(
     "INSERT INTO workout_templates (id, name, muscle_group, order_index, assigned_weekdays, created_at_iso) VALUES (?, ?, ?, ?, ?, ?)",
     templateId,
     name.trim(),
     muscleGroup.trim(),
-    orderIndex,
+    normalizedOrderIndex,
     serializeWeekdays(assignedWeekdays),
     new Date().toISOString()
   );
@@ -563,7 +576,7 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
     );
     for (const exercise of item.exercises) {
       await db.runAsync(
-        "INSERT INTO exercises (id, session_id, name, rep_scheme, planned_weight_kg, weight_kg, intensity, is_completed, image_key, set_logs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO exercises (id, session_id, name, rep_scheme, planned_weight_kg, weight_kg, intensity, anxiety_level, is_completed, image_key, set_logs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         exercise.id,
         item.id,
         exercise.name,
@@ -571,6 +584,7 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
         exercise.plannedWeightKg ?? exercise.weightKg,
         exercise.weightKg,
         exercise.intensity,
+        exercise.anxietyLevel ?? null,
         exercise.isCompleted ? 1 : 0,
         exercise.imageKey,
         JSON.stringify(normalizeSetLogs(exercise.setLogs ?? buildInitialSetLogs(exercise.repScheme)))
@@ -656,7 +670,7 @@ async function getExercisesBySessionId(sessionId: string): Promise<Exercise[]> {
       setLogsRaw: string;
     }
   >(
-    "SELECT id, name, rep_scheme as repScheme, planned_weight_kg as plannedWeightKg, weight_kg as weightKg, intensity, is_completed as isCompleted, image_key as imageKey, set_logs as setLogsRaw FROM exercises WHERE session_id = ? ORDER BY rowid ASC",
+    "SELECT id, name, rep_scheme as repScheme, planned_weight_kg as plannedWeightKg, weight_kg as weightKg, intensity, anxiety_level as anxietyLevel, is_completed as isCompleted, image_key as imageKey, set_logs as setLogsRaw FROM exercises WHERE session_id = ? ORDER BY rowid ASC",
     sessionId
   );
   return rows.map((entry) => ({
@@ -802,6 +816,7 @@ async function runMigration() {
   await addColumnIfMissing("exercises", "planned_weight_kg", "REAL NOT NULL DEFAULT 0");
   await addColumnIfMissing("exercises", "is_completed", "INTEGER NOT NULL DEFAULT 0");
   await addColumnIfMissing("exercises", "set_logs", "TEXT NOT NULL DEFAULT '[]'");
+  await addColumnIfMissing("exercises", "anxiety_level", "INTEGER");
 
   // Copy legacy sets/reps into rep_scheme if needed.
   await db.runAsync(
@@ -993,7 +1008,7 @@ function getIntensityFromSetLogs(setLogs: ExerciseSetLog[]): number | null {
 }
 
 function isoDateOnly(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function cryptoRandomId() {

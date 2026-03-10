@@ -16,6 +16,7 @@ export type Exercise = {
   plannedWeightKg: number;
   weightKg: number;
   intensity: number;
+  anxietyLevel: number | null;
   isCompleted: boolean;
   imageKey: string;
   setLogs: ExerciseSetLog[];

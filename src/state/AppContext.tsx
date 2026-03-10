@@ -83,7 +83,7 @@ type AppContextData = {
   bootstrap: () => Promise<void>;
   ensureTodayWorkout: () => Promise<void>;
   createWorkoutFromTemplate: (templateId?: string | null) => Promise<void>;
-  saveExercise: (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; isCompleted: boolean }) => Promise<void>;
+  saveExercise: (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; anxietyLevel: number | null; isCompleted: boolean }) => Promise<void>;
   doCheckIn: (translate: (key: string) => string, sessionId?: string) => Promise<void>;
   setTheme: (theme: AppTheme) => void;
   setLanguage: (language: AppLanguage) => void;
@@ -93,6 +93,7 @@ type AppContextData = {
     name: string;
     muscleGroup: string;
     assignedWeekdays: Weekday[];
+    orderIndex?: number;
     exercises: Array<{ exerciseName: string; repScheme: string; defaultWeightKg: number; imageKey: string }>;
   }) => Promise<void>;
   moveTemplate: (templateId: string, direction: "up" | "down") => Promise<void>;
@@ -124,7 +125,8 @@ type AppContextData = {
 const AppContext = createContext<AppContextData | undefined>(undefined);
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -258,11 +260,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const saveExercise = useCallback(
-    async (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; isCompleted: boolean }) => {
+    async (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; anxietyLevel: number | null; isCompleted: boolean }) => {
       try {
         await saveExerciseExecution(params.exerciseId, {
           weightKg: params.weightKg,
           setLogs: params.setLogs,
+          anxietyLevel: params.anxietyLevel,
           isCompleted: params.isCompleted
         });
         await refreshAll();
@@ -341,9 +344,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       name: string;
       muscleGroup: string;
       assignedWeekdays: Weekday[];
+      orderIndex?: number;
       exercises: Array<{ exerciseName: string; repScheme: string; defaultWeightKg: number; imageKey: string }>;
     }) => {
-      const templateId = await createTemplate(params.name, params.muscleGroup, params.assignedWeekdays);
+      const templateId = await createTemplate(params.name, params.muscleGroup, params.assignedWeekdays, params.orderIndex);
       await clearTemplateExercises(templateId);
 
       for (const item of params.exercises) {

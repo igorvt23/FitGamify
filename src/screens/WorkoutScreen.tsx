@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { useAppContext } from "../state/AppContext";
@@ -8,6 +8,7 @@ import { DifficultyLevel, Exercise, ExerciseSetLog, WorkoutWithExercises } from 
 
 type ExerciseDraftState = {
   weightKg: string;
+  anxietyLevel: string;
   setLogs: ExerciseSetLog[];
   isCompleted: boolean;
 };
@@ -19,6 +20,20 @@ export function WorkoutScreen() {
   const { todayWorkouts, ensureTodayWorkout, createWorkoutFromTemplate, saveExercise, doCheckIn, suggestedTemplatesToday, scheduleMode, templates } =
     useAppContext();
   const isDark = useColorScheme() === "dark";
+  const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (todayWorkouts.length === 0) {
+      setSelectedWorkoutId(null);
+      return;
+    }
+    setSelectedWorkoutId((current) => (current && todayWorkouts.some((item) => item.id === current) ? current : todayWorkouts[0].id));
+  }, [todayWorkouts]);
+
+  const selectedWorkout = useMemo(
+    () => todayWorkouts.find((item) => item.id === selectedWorkoutId) ?? todayWorkouts[0] ?? null,
+    [selectedWorkoutId, todayWorkouts]
+  );
 
   const availableTemplates = useMemo(() => {
     const existingIds = new Set(todayWorkouts.map((item) => item.templateId).filter(Boolean));
@@ -31,30 +46,57 @@ export function WorkoutScreen() {
       <Text style={[styles.title, { color: isDark ? "#F0F6FC" : "#111827" }]}>{t("workout.title")}</Text>
 
       {todayWorkouts.length === 0 ? (
-        <Pressable style={styles.primaryButton} onPress={() => void ensureTodayWorkout()}>
-          <Text style={styles.primaryButtonText}>{t("workout.create")}</Text>
-        </Pressable>
+        <View style={[styles.card, { backgroundColor: isDark ? "#161B22" : "#FFFFFF" }]}>
+          <Text style={[styles.sectionTitle, { color: isDark ? "#F0F6FC" : "#111827" }]}>{t("workout.createdWorkouts")}</Text>
+          <Text style={{ color: isDark ? "#9CA3AF" : "#6B7280" }}>{t("workout.selectWorkout")}</Text>
+          <Pressable style={styles.primaryButton} onPress={() => void ensureTodayWorkout()}>
+            <Text style={styles.primaryButtonText}>{t("workout.create")}</Text>
+          </Pressable>
+        </View>
       ) : (
         <>
           <View style={[styles.card, { backgroundColor: isDark ? "#161B22" : "#FFFFFF" }]}>
-            <Text style={{ color: isDark ? "#E6EDF3" : "#111827", fontWeight: "700" }}>{t("workout.dayOverview")}</Text>
+            <Text style={[styles.sectionTitle, { color: isDark ? "#F0F6FC" : "#111827" }]}>{t("workout.todayOrder")}</Text>
             <Text style={{ color: isDark ? "#9CA3AF" : "#6B7280" }}>
               {t("workout.totalSessions")}: {todayWorkouts.length}
             </Text>
+            <View style={styles.workoutList}>
+              {todayWorkouts.map((workout, index) => {
+                const selected = workout.id === selectedWorkout?.id;
+                return (
+                  <Pressable
+                    key={workout.id}
+                    style={[
+                      styles.workoutChip,
+                      { backgroundColor: selected ? "#2563EB" : isDark ? "#0F172A" : "#E5E7EB" }
+                    ]}
+                    onPress={() => setSelectedWorkoutId(workout.id)}
+                  >
+                    <Text style={[styles.workoutChipOrder, { color: selected ? "#BFDBFE" : isDark ? "#93C5FD" : "#1D4ED8" }]}>
+                      #{index + 1}
+                    </Text>
+                    <Text style={[styles.workoutChipTitle, { color: selected ? "#FFFFFF" : isDark ? "#E6EDF3" : "#111827" }]}>
+                      {workout.templateName ?? t("plans.defaultName")}
+                    </Text>
+                    <Text style={{ color: selected ? "#DBEAFE" : isDark ? "#9CA3AF" : "#6B7280" }}>
+                      {workout.muscleGroup ?? t("plans.defaultMuscle")}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
 
-          {todayWorkouts.map((workout, index) => (
-            <WorkoutSessionCard key={workout.id} workout={workout} index={index} isDark={isDark} t={t} onSaveExercise={saveExercise} onCheckIn={doCheckIn} />
-          ))}
+          {selectedWorkout ? (
+            <WorkoutSessionCard workout={selectedWorkout} isDark={isDark} t={t} onSaveExercise={saveExercise} onCheckIn={doCheckIn} />
+          ) : null}
         </>
       )}
 
       <View style={[styles.card, { backgroundColor: isDark ? "#161B22" : "#FFFFFF" }]}>
-        <Text style={{ color: isDark ? "#E6EDF3" : "#111827", fontWeight: "700" }}>{t("workout.addAnother")}</Text>
-        {scheduleMode === "sequence" ? (
-          <Pressable style={styles.secondaryButton} onPress={() => void createWorkoutFromTemplate()}>
-            <Text style={styles.secondaryButtonText}>{t("workout.addSequenceWorkout")}</Text>
-          </Pressable>
+        <Text style={[styles.sectionTitle, { color: isDark ? "#F0F6FC" : "#111827" }]}>{t("workout.addTodayWorkout")}</Text>
+        {scheduleMode === "sequence" && availableTemplates.length > 0 ? (
+          <Text style={{ color: isDark ? "#9CA3AF" : "#6B7280" }}>{t("workout.nextRecommended")}</Text>
         ) : null}
         {availableTemplates.length === 0 ? (
           <Text style={{ color: isDark ? "#9CA3AF" : "#6B7280" }}>{t("workout.noMoreTemplatesToday")}</Text>
@@ -75,17 +117,15 @@ export function WorkoutScreen() {
 
 function WorkoutSessionCard({
   workout,
-  index,
   isDark,
   t,
   onSaveExercise,
   onCheckIn
 }: {
   workout: WorkoutWithExercises;
-  index: number;
   isDark: boolean;
   t: (key: string) => string;
-  onSaveExercise: (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; isCompleted: boolean }) => Promise<void>;
+  onSaveExercise: (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; anxietyLevel: number | null; isCompleted: boolean }) => Promise<void>;
   onCheckIn: (translate: (key: string) => string, sessionId?: string) => Promise<void>;
 }) {
   const summary = useMemo(() => {
@@ -96,31 +136,34 @@ function WorkoutSessionCard({
 
   return (
     <View style={[styles.card, { backgroundColor: isDark ? "#161B22" : "#FFFFFF" }]}>
-      <Text style={[styles.sessionTitle, { color: isDark ? "#F0F6FC" : "#111827" }]}>
-        {t("workout.sessionLabel")} {index + 1}
-      </Text>
-      <Text style={{ color: isDark ? "#E6EDF3" : "#111827", fontWeight: "700" }}>{workout.templateName ?? t("plans.defaultName")}</Text>
+      <Text style={[styles.sectionTitle, { color: isDark ? "#F0F6FC" : "#111827" }]}>{t("workout.selectedWorkout")}</Text>
+      <Text style={[styles.sessionTitle, { color: isDark ? "#F0F6FC" : "#111827" }]}>{workout.templateName ?? t("plans.defaultName")}</Text>
       <Text style={{ color: isDark ? "#9CA3AF" : "#6B7280" }}>{workout.muscleGroup ?? t("plans.defaultMuscle")}</Text>
-
-      {workout.exercises.map((exercise) => (
-        <ExerciseExecutionCard key={exercise.id} exercise={exercise} isDark={isDark} t={t} onSaveExercise={onSaveExercise} />
-      ))}
 
       <View style={[styles.summaryCard, { backgroundColor: isDark ? "#0F172A" : "#EFF6FF" }]}>
         <Text style={{ color: isDark ? "#E6EDF3" : "#111827", fontWeight: "600" }}>
-          {t("workout.totalVolume")}: {Math.round(summary.totalVolume)} kg
-        </Text>
-        <Text style={{ color: isDark ? "#E6EDF3" : "#111827", fontWeight: "600" }}>
           {t("workout.completedExercises")}: {summary.completedCount}/{workout.exercises.length}
         </Text>
+        <Text style={{ color: isDark ? "#E6EDF3" : "#111827", fontWeight: "600" }}>
+          {t("workout.totalVolume")}: {Math.round(summary.totalVolume)} kg
+        </Text>
       </View>
+
+      <Text style={[styles.sectionTitle, { color: isDark ? "#F0F6FC" : "#111827" }]}>{t("workout.exercisesTitle")}</Text>
+      {workout.exercises.length === 0 ? (
+        <Text style={{ color: isDark ? "#9CA3AF" : "#6B7280" }}>{t("workout.noExercisesInWorkout")}</Text>
+      ) : (
+        workout.exercises.map((exercise, index) => (
+          <ExerciseExecutionCard key={exercise.id} exercise={exercise} order={index + 1} isDark={isDark} t={t} onSaveExercise={onSaveExercise} />
+        ))
+      )}
 
       <Pressable
         style={[styles.primaryButton, Boolean(workout.checkedInAtIso) && styles.primaryButtonDisabled]}
         onPress={() => void onCheckIn(t, workout.id)}
         disabled={Boolean(workout.checkedInAtIso)}
       >
-        <Text style={styles.primaryButtonText}>{workout.checkedInAtIso ? t("workout.checkedin") : t("workout.checkin")}</Text>
+        <Text style={styles.primaryButtonText}>{workout.checkedInAtIso ? t("workout.checkedin") : t("workout.finishWorkout")}</Text>
       </Pressable>
     </View>
   );
@@ -128,17 +171,20 @@ function WorkoutSessionCard({
 
 function ExerciseExecutionCard({
   exercise,
+  order,
   isDark,
   t,
   onSaveExercise
 }: {
   exercise: Exercise;
+  order: number;
   isDark: boolean;
   t: (key: string) => string;
-  onSaveExercise: (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; isCompleted: boolean }) => Promise<void>;
+  onSaveExercise: (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; anxietyLevel: number | null; isCompleted: boolean }) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<ExerciseDraftState>(() => buildDraft(exercise));
   const [saving, setSaving] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     setDraft(buildDraft(exercise));
@@ -146,18 +192,46 @@ function ExerciseExecutionCard({
 
   const completedSets = draft.setLogs.filter((item) => item.actualReps != null).length;
 
+  const persist = async (payload: { completeExercise: boolean }) => {
+    setSaving(true);
+    try {
+      await onSaveExercise({
+        exerciseId: exercise.id,
+        weightKg: Math.max(0, Number(draft.weightKg) || 0),
+        setLogs: draft.setLogs,
+        anxietyLevel: draft.anxietyLevel === "" ? null : Math.max(0, Math.min(10, Number(draft.anxietyLevel) || 0)),
+        isCompleted: payload.completeExercise ? true : draft.isCompleted
+      });
+      if (payload.completeExercise) {
+        setDraft((prev) => ({ ...prev, isCompleted: true }));
+        setModalOpen(false);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <View style={[styles.exerciseCard, { borderColor: isDark ? "#2D3748" : "#E5E7EB" }]}>
-      <View style={styles.row}>
-        <View style={[styles.iconWrap, { backgroundColor: isDark ? "#1F2937" : "#EEF2F7" }]}>
-          <MaterialCommunityIcons name={exercise.imageKey as never} size={18} color={isDark ? "#8AB4F8" : "#1D4ED8"} />
+      <View style={styles.rowBetween}>
+        <View style={styles.row}>
+          <View style={[styles.iconWrap, { backgroundColor: isDark ? "#1F2937" : "#EEF2F7" }]}>
+            <MaterialCommunityIcons name={exercise.imageKey as never} size={18} color={isDark ? "#8AB4F8" : "#1D4ED8"} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.exerciseTitle, { color: isDark ? "#E6EDF3" : "#0F172A" }]}>
+              {order}. {exercise.name}
+            </Text>
+            <Text style={[styles.subtitle, { color: isDark ? "#9CA3AF" : "#6B7280" }]}>
+              {t("workout.proposedSeries")}: {exercise.repScheme}
+            </Text>
+          </View>
         </View>
-        <Text style={[styles.exerciseTitle, { color: isDark ? "#E6EDF3" : "#0F172A" }]}>{exercise.name}</Text>
+        <Text style={{ color: draft.isCompleted ? "#16A34A" : isDark ? "#9CA3AF" : "#6B7280", fontWeight: "700" }}>
+          {draft.isCompleted ? t("workout.doneLabel") : `${completedSets}/${draft.setLogs.length}`}
+        </Text>
       </View>
 
-      <Text style={[styles.subtitle, { color: isDark ? "#9CA3AF" : "#6B7280" }]}>
-        {t("workout.proposedSeries")}: {exercise.repScheme}
-      </Text>
       <Text style={[styles.subtitle, { color: isDark ? "#9CA3AF" : "#6B7280" }]}>
         {t("workout.plannedWeight")}: {exercise.plannedWeightKg}kg | {t("workout.currentWeight")}: {draft.weightKg || "0"}kg
       </Text>
@@ -196,7 +270,7 @@ function ExerciseExecutionCard({
             placeholder={String(setItem.targetReps)}
             placeholderTextColor={isDark ? "#6B7280" : "#9CA3AF"}
           />
-          <Text style={{ color: isDark ? "#A7B0BA" : "#4B5563", fontWeight: "700" }}>{t("workout.difficulty")}</Text>
+          <Text style={{ color: isDark ? "#A7B0BA" : "#4B5563", fontWeight: "700" }}>{t("workout.difficultyLabel")}</Text>
           <View style={styles.difficultyRow}>
             {DIFFICULTIES.map((difficulty) => {
               const selected = setItem.difficulty === difficulty;
@@ -219,36 +293,55 @@ function ExerciseExecutionCard({
         </View>
       ))}
 
-      <View style={styles.row}>
-        <Pressable
-          style={[styles.toggleButton, draft.isCompleted && styles.toggleButtonActive]}
-          onPress={() => setDraft((prev) => ({ ...prev, isCompleted: !prev.isCompleted }))}
-        >
-          <Text style={styles.toggleButtonText}>{draft.isCompleted ? t("workout.doneLabel") : t("workout.markDone")}</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.saveButton, saving && styles.primaryButtonDisabled]}
-          disabled={saving}
-          onPress={async () => {
-            setSaving(true);
-            try {
-              await onSaveExercise({
-                exerciseId: exercise.id,
-                weightKg: Math.max(0, Number(draft.weightKg) || 0),
-                setLogs: draft.setLogs,
-                isCompleted: draft.isCompleted
-              });
-            } finally {
-              setSaving(false);
-            }
-          }}
-        >
+      <View style={styles.actionRow}>
+        <Pressable style={[styles.saveButton, saving && styles.primaryButtonDisabled]} disabled={saving} onPress={() => void persist({ completeExercise: false })}>
           <Text style={styles.primaryButtonText}>{t("workout.saveExercise")}</Text>
         </Pressable>
+        <Pressable
+          style={[styles.completeButton, (saving || draft.isCompleted) && styles.primaryButtonDisabled]}
+          disabled={saving || draft.isCompleted}
+          onPress={() => setModalOpen(true)}
+        >
+          <Text style={styles.primaryButtonText}>{t("workout.completeExercise")}</Text>
+        </Pressable>
       </View>
-      <Text style={{ color: isDark ? "#9CA3AF" : "#6B7280" }}>
-        {t("workout.completedSets")}: {completedSets}/{draft.setLogs.length}
-      </Text>
+
+      <Modal visible={modalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: isDark ? "#161B22" : "#FFFFFF" }]}>
+            <Text style={[styles.sectionTitle, { color: isDark ? "#F0F6FC" : "#111827" }]}>{t("workout.completeModalTitle")}</Text>
+            <Text style={{ color: isDark ? "#9CA3AF" : "#6B7280" }}>{t("workout.completeModalHint")}</Text>
+
+            <Text style={[styles.fieldLabel, { color: isDark ? "#A7B0BA" : "#4B5563" }]}>{t("workout.currentWeight")} (kg)</Text>
+            <TextInput
+              style={[styles.input, themedInput(isDark)]}
+              keyboardType="numeric"
+              value={draft.weightKg}
+              onChangeText={(value) => setDraft((prev) => ({ ...prev, weightKg: value }))}
+              placeholderTextColor={isDark ? "#6B7280" : "#9CA3AF"}
+            />
+
+            <Text style={[styles.fieldLabel, { color: isDark ? "#A7B0BA" : "#4B5563" }]}>{t("workout.anxietyLevel")} (0-10)</Text>
+            <TextInput
+              style={[styles.input, themedInput(isDark)]}
+              keyboardType="numeric"
+              value={draft.anxietyLevel}
+              onChangeText={(value) => setDraft((prev) => ({ ...prev, anxietyLevel: value }))}
+              placeholder="0"
+              placeholderTextColor={isDark ? "#6B7280" : "#9CA3AF"}
+            />
+
+            <View style={styles.actionRow}>
+              <Pressable style={styles.secondaryButton} onPress={() => setModalOpen(false)}>
+                <Text style={styles.secondaryButtonText}>{t("workout.cancel")}</Text>
+              </Pressable>
+              <Pressable style={[styles.completeButton, saving && styles.primaryButtonDisabled]} disabled={saving} onPress={() => void persist({ completeExercise: true })}>
+                <Text style={styles.primaryButtonText}>{t("workout.confirm")}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -256,6 +349,7 @@ function ExerciseExecutionCard({
 function buildDraft(exercise: Exercise): ExerciseDraftState {
   return {
     weightKg: String(exercise.weightKg),
+    anxietyLevel: exercise.anxietyLevel == null ? "" : String(exercise.anxietyLevel),
     setLogs: exercise.setLogs.map((item) => ({ ...item })),
     isCompleted: exercise.isCompleted
   };
@@ -283,9 +377,29 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     gap: 10
   },
-  sessionTitle: {
-    fontSize: 18,
+  sectionTitle: {
+    fontSize: 16,
     fontWeight: "700"
+  },
+  sessionTitle: {
+    fontSize: 20,
+    fontWeight: "700"
+  },
+  workoutList: {
+    gap: 8
+  },
+  workoutChip: {
+    borderRadius: 14,
+    padding: 12,
+    gap: 4
+  },
+  workoutChipOrder: {
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  workoutChipTitle: {
+    fontWeight: "700",
+    fontSize: 16
   },
   exerciseCard: {
     borderWidth: 1,
@@ -296,6 +410,12 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8
+  },
+  rowBetween: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
     gap: 8
   },
   iconWrap: {
@@ -352,23 +472,20 @@ const styles = StyleSheet.create({
   difficultyTextActive: {
     color: "#FFFFFF"
   },
-  toggleButton: {
-    flex: 1,
-    backgroundColor: "#64748B",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center"
-  },
-  toggleButtonActive: {
-    backgroundColor: "#16A34A"
-  },
-  toggleButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700"
+  actionRow: {
+    flexDirection: "row",
+    gap: 8
   },
   saveButton: {
     flex: 1,
     backgroundColor: "#2563EB",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center"
+  },
+  completeButton: {
+    flex: 1,
+    backgroundColor: "#16A34A",
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: "center"
@@ -392,6 +509,7 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   secondaryButton: {
+    flex: 1,
     backgroundColor: "#DBEAFE",
     borderRadius: 12,
     paddingVertical: 12,
@@ -415,6 +533,17 @@ const styles = StyleSheet.create({
   },
   templateButtonSubtitle: {
     color: "#4B5563"
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    padding: 20,
+    justifyContent: "center"
+  },
+  modalCard: {
+    borderRadius: 16,
+    padding: 16,
+    gap: 10
   }
 });
 

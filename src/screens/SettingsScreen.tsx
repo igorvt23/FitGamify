@@ -12,7 +12,7 @@ type SettingsNav = StackNavigationProp<RootStackParamList, "MainTabs">;
 export function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
   const { t } = useI18n();
-  const { theme, setTheme, language, setLanguage, authUser, signIn, signOut, backupNow, restoreBackupNow, errors } = useAppContext();
+  const { theme, setTheme, language, setLanguage, authUser, signIn, signOut, backupNow, restoreBackupNow } = useAppContext();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -137,20 +137,6 @@ export function SettingsScreen() {
           <Text>{message}</Text>
         </View>
       ) : null}
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>{t("settings.errors")}</Text>
-        {errors.length === 0 ? (
-          <Text>{t("settings.noErrors")}</Text>
-        ) : (
-          errors.map((entry) => (
-            <View key={entry.id} style={styles.errorLine}>
-              <Text style={styles.errorCategory}>{entry.category}</Text>
-              <Text>{entry.message}</Text>
-            </View>
-          ))
-        )}
-      </View>
     </ScrollView>
   );
 }
@@ -212,13 +198,5 @@ const styles = StyleSheet.create({
   hint: {
     color: "#4b5563",
     fontSize: 12
-  },
-  errorLine: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#d0d7de",
-    paddingTop: 6
-  },
-  errorCategory: {
-    fontWeight: "700"
   }
 });
