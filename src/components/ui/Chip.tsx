@@ -21,9 +21,9 @@ export function Chip({ label, selected, onPress, style }: ChipProps) {
         {
           borderRadius: radius.pill,
           backgroundColor: selected ? colors.primary : colors.chip,
-          borderColor: selected ? colors.primary : colors.border
+          borderColor: selected ? colors.primaryShadow : colors.border
         },
-        pressed ? { opacity: 0.9 } : null,
+        pressed ? { borderBottomWidth: 1, transform: [{ translateY: 3 }] } : null,
         style
       ]}
     >
@@ -34,12 +34,15 @@ export function Chip({ label, selected, onPress, style }: ChipProps) {
 
 const styles = StyleSheet.create({
   base: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: 2,
+    borderBottomWidth: 4
   },
   label: {
     fontSize: 12,
-    fontWeight: "700"
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8
   }
 });

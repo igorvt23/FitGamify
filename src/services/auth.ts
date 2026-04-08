@@ -59,6 +59,17 @@ export async function signOutCloud() {
   }
 }
 
+export async function sendPasswordResetEmail(email: string): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase nao configurado no app.json");
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+  if (error) {
+    throw error;
+  }
+}
+
 export async function getCurrentAuthUser(): Promise<AuthUser | null> {
   if (!isSupabaseConfigured) {
     return null;

@@ -8,7 +8,6 @@ import { DashboardScreen } from "../screens/DashboardScreen";
 import { AchievementsScreen } from "../screens/AchievementsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { PlansScreen } from "../screens/PlansScreen";
-import { useI18n } from "../i18n";
 import { useTheme } from "../theme/useTheme";
 
 type TabParamList = {
@@ -22,16 +21,18 @@ type TabParamList = {
 const Tab = createBottomTabNavigator<TabParamList>();
 
 export function AppTabs() {
-  const { t } = useI18n();
-  const { colors, typography } = useTheme();
+  const { colors } = useTheme();
 
   const iconWrap = (name: React.ComponentProps<typeof MaterialCommunityIcons>["name"]) =>
     ({ size, focused }: { size: number; focused: boolean }) => (
       <View
         style={{
-          padding: 6,
-          borderRadius: 12,
-          backgroundColor: focused ? colors.primarySoft : "transparent"
+          paddingHorizontal: 10,
+          paddingVertical: 5,
+          borderRadius: 999,
+          backgroundColor: focused ? colors.primarySoft : "transparent",
+          borderColor: focused ? colors.primary : "transparent",
+          borderWidth: 2
         }}
       >
         <MaterialCommunityIcons name={name} color={focused ? colors.primary : colors.textMuted} size={size} />
@@ -46,25 +47,30 @@ export function AppTabs() {
         headerTitleAlign: "center",
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
+        tabBarShowLabel: false,
         tabBarStyle: {
           backgroundColor: colors.tabBar,
           borderTopColor: colors.tabBarBorder,
-          borderTopWidth: 1,
-          height: 68,
+          borderTopWidth: 2,
+          borderWidth: 2,
+          borderColor: colors.tabBarBorder,
+          height: 70,
           paddingBottom: 10,
-          paddingTop: 6,
-          borderRadius: 18,
-          marginHorizontal: 12,
+          paddingTop: 8,
+          borderRadius: 24,
+          marginHorizontal: 10,
           marginBottom: 10,
           position: "absolute",
-          shadowColor: "#000",
-          shadowOpacity: 0.08,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: 6 },
-          elevation: 4
+          shadowColor: "#000000",
+          shadowOpacity: 0.2,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 6
         },
         tabBarHideOnKeyboard: true,
-        tabBarLabelStyle: { fontWeight: "700", fontSize: 11, fontFamily: typography.body },
+        tabBarItemStyle: {
+          marginHorizontal: 4
+        },
         headerStyle: { backgroundColor: colors.surface },
         headerTintColor: colors.text
       }}
@@ -73,7 +79,6 @@ export function AppTabs() {
         name="Workout"
         component={WorkoutScreen}
         options={{
-          title: t("tab.workout"),
           tabBarIcon: iconWrap("dumbbell")
         }}
       />
@@ -81,7 +86,6 @@ export function AppTabs() {
         name="Plans"
         component={PlansScreen}
         options={{
-          title: t("tab.plans"),
           tabBarIcon: iconWrap("calendar-edit")
         }}
       />
@@ -89,7 +93,6 @@ export function AppTabs() {
         name="Dashboard"
         component={DashboardScreen}
         options={{
-          title: t("tab.dashboard"),
           tabBarIcon: iconWrap("chart-line")
         }}
       />
@@ -97,7 +100,6 @@ export function AppTabs() {
         name="Achievements"
         component={AchievementsScreen}
         options={{
-          title: t("tab.achievements"),
           tabBarIcon: iconWrap("trophy-award")
         }}
       />
@@ -105,7 +107,6 @@ export function AppTabs() {
         name="Settings"
         component={SettingsScreen}
         options={{
-          title: t("tab.settings"),
           tabBarIcon: iconWrap("cog-outline")
         }}
       />

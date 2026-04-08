@@ -46,6 +46,24 @@ const REMINDER_MESSAGES: Record<AppLanguage, { title: string; bodies: string[] }
   }
 };
 
+const TEMPLATE_REFRESH_MESSAGES: Record<AppLanguage, { title: string; bodySingle: string; bodyPlural: string }> = {
+  "pt-BR": {
+    title: "Revisao de treino recomendada",
+    bodySingle: "1 treino esta no limite. Hora de atualizar para continuar evoluindo.",
+    bodyPlural: "%{count} treinos estao no limite. Hora de atualizar para continuar evoluindo."
+  },
+  en: {
+    title: "Workout refresh recommended",
+    bodySingle: "1 workout is due for review. Time to refresh your plan.",
+    bodyPlural: "%{count} workouts are due for review. Time to refresh your plan."
+  },
+  es: {
+    title: "Revision de entrenamiento recomendada",
+    bodySingle: "1 entrenamiento necesita revision. Hora de actualizar tu plan.",
+    bodyPlural: "%{count} entrenamientos necesitan revision. Hora de actualizar tu plan."
+  }
+};
+
 export async function setupNotifications() {
   await ensureNotificationPermission();
   if (Platform.OS === "android") {
@@ -74,6 +92,49 @@ export async function sendMotivationalNotification(t: (key: string) => string) {
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: 5
+    }
+  });
+}
+
+export async function simulateWorkoutReminderNow(language: AppLanguage) {
+  const granted = await ensureNotificationPermission();
+  if (!granted) {
+    throw new Error("Permissao de notificacao negada.");
+  }
+
+  const copy = REMINDER_MESSAGES[language] ?? REMINDER_MESSAGES["pt-BR"];
+  const body = copy.bodies[Math.floor(Math.random() * copy.bodies.length)];
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: copy.title,
+      body
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 1
+    }
+  });
+}
+
+export async function simulateTemplateRefreshReminderNow(language: AppLanguage, dueCount: number) {
+  const granted = await ensureNotificationPermission();
+  if (!granted) {
+    throw new Error("Permissao de notificacao negada.");
+  }
+
+  const normalizedCount = Number.isFinite(dueCount) && dueCount > 0 ? Math.floor(dueCount) : 1;
+  const copy = TEMPLATE_REFRESH_MESSAGES[language] ?? TEMPLATE_REFRESH_MESSAGES["pt-BR"];
+  const bodyTemplate = normalizedCount === 1 ? copy.bodySingle : copy.bodyPlural;
+  const body = bodyTemplate.replace("%{count}", String(normalizedCount));
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: copy.title,
+      body
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 1
     }
   });
 }

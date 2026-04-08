@@ -20,97 +20,118 @@ type ButtonProps = {
   pixel?: boolean;
 };
 
-export function Button({ label, onPress, disabled, style, variant = "primary", size = "md", leftIcon, rightIcon, pill, pixel }: ButtonProps) {
+export function Button({
+  label,
+  onPress,
+  disabled,
+  style,
+  variant = "primary",
+  size = "md",
+  leftIcon,
+  rightIcon,
+  pill
+}: ButtonProps) {
   const { colors, radius, typography } = useTheme();
 
   const sizeStyle = sizeStyles[size];
-  const baseStyle: ViewStyle = {
-    borderRadius: pill ? radius.pill : pixel ? radius.sm : radius.md,
-    alignItems: "center",
-    justifyContent: "center"
-  };
-
-  const variantStyle: ViewStyle =
-    variant === "secondary"
-      ? { backgroundColor: colors.primarySoft }
-      : variant === "danger"
-        ? { backgroundColor: colors.danger }
-        : variant === "ghost"
-          ? { backgroundColor: "transparent" }
-          : variant === "outline"
-            ? { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border }
-            : { backgroundColor: colors.primary };
-
-  const textColor =
-    variant === "secondary"
-      ? colors.primaryStrong
-      : variant === "ghost" || variant === "outline"
-        ? colors.text
-        : "#FFFFFF";
-
-  const pixelStyle: ViewStyle | null = pixel
-    ? {
-        borderWidth: 2,
-        borderColor: variant === "primary" ? colors.primaryStrong : colors.border,
-        shadowColor: colors.primaryShadow,
-        shadowOpacity: 0.35,
-        shadowRadius: 0,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 4
-      }
-    : null;
+  const palette = getVariantPalette(variant, colors);
+  const isGhost = variant === "ghost";
 
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
-        baseStyle,
+        styles.base,
         sizeStyle,
-        variantStyle,
-        pixelStyle,
+        {
+          borderRadius: pill ? radius.pill : radius.md,
+          backgroundColor: palette.backgroundColor,
+          borderColor: palette.borderColor,
+          borderWidth: isGhost ? 0 : 2,
+          borderBottomWidth: isGhost ? 0 : 4
+        },
         pressed && !disabled
-          ? pixel
-            ? { transform: [{ translateY: 1 }] }
-            : { opacity: 0.9, transform: [{ scale: 0.98 }] }
+          ? isGhost
+            ? { opacity: 0.85, transform: [{ scale: 0.97 }] }
+            : { borderBottomWidth: 0, transform: [{ translateY: 4 }] }
           : null,
-        disabled ? { opacity: 0.6 } : null,
+        disabled ? styles.disabled : null,
         style
       ]}
     >
       <View style={styles.row}>
         {leftIcon ? <View style={styles.icon}>{leftIcon}</View> : null}
-        <Text
-          style={[
-            styles.label,
-            { color: textColor, fontFamily: typography.body },
-            pixel ? { textTransform: "uppercase", letterSpacing: 0.6 } : null
-          ]}
-        >
-          {label}
-        </Text>
+        <Text style={[styles.label, { color: palette.textColor, fontFamily: typography.title }]}>{label}</Text>
         {rightIcon ? <View style={styles.icon}>{rightIcon}</View> : null}
       </View>
     </Pressable>
   );
 }
 
+function getVariantPalette(variant: ButtonVariant, colors: ReturnType<typeof useTheme>["colors"]) {
+  if (variant === "secondary") {
+    return {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      textColor: colors.text
+    };
+  }
+
+  if (variant === "danger") {
+    return {
+      backgroundColor: colors.danger,
+      borderColor: colors.primaryShadow,
+      textColor: "#FFFFFF"
+    };
+  }
+
+  if (variant === "ghost") {
+    return {
+      backgroundColor: "transparent",
+      borderColor: "transparent",
+      textColor: colors.text
+    };
+  }
+
+  if (variant === "outline") {
+    return {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      textColor: colors.text
+    };
+  }
+
+  return {
+    backgroundColor: colors.primary,
+    borderColor: colors.primaryShadow,
+    textColor: "#FFFFFF"
+  };
+}
+
 const sizeStyles = StyleSheet.create({
   sm: {
-    paddingVertical: 8,
-    paddingHorizontal: 12
+    paddingVertical: 10,
+    paddingHorizontal: 14
   },
   md: {
     paddingVertical: 12,
-    paddingHorizontal: 16
+    paddingHorizontal: 18
   },
   lg: {
     paddingVertical: 14,
-    paddingHorizontal: 18
+    paddingHorizontal: 20
   }
 });
 
 const styles = StyleSheet.create({
+  base: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  disabled: {
+    opacity: 0.55
+  },
   label: {
     fontWeight: "700",
     fontSize: 14
@@ -118,6 +139,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8
   },
   icon: {

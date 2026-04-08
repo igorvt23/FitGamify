@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,6 +12,8 @@ import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { ProgressBar } from "../components/ui/ProgressBar";
 import { Input } from "../components/ui/Input";
+import { TEMPLATE_REFRESH_INTERVAL_MONTHS, getTemplatesNeedingRefresh } from "../core/templateRefresh";
+import appLogo from "../img/logo_fitgamify.png";
 
 const DIFFICULTIES: DifficultyLevel[] = ["easy", "medium", "hard"];
 const MAX_REPS = 200;
@@ -49,10 +51,12 @@ export function WorkoutScreen() {
     setSelectedWorkoutId((current) => (current && todayWorkouts.some((item) => item.id === current) ? current : todayWorkouts[0].id));
   }, [todayWorkouts]);
 
+  const activeTemplates = useMemo(() => templates.filter((item) => item.isActive), [templates]);
+
   useEffect(() => {
     let active = true;
 
-    if (todayWorkouts.length > 0 || templates.length === 0) {
+    if (activeTemplates.length === 0) {
       return () => {
         active = false;
       };
@@ -60,7 +64,7 @@ export function WorkoutScreen() {
 
     const loadCounts = async () => {
       const entries = await Promise.all(
-        templates.map(async (item) => {
+        activeTemplates.map(async (item) => {
           const exercises = await fetchTemplateExercises(item.id);
           return [item.id, exercises.length] as const;
         })
@@ -75,7 +79,7 @@ export function WorkoutScreen() {
     return () => {
       active = false;
     };
-  }, [fetchTemplateExercises, templates, todayWorkouts.length]);
+  }, [activeTemplates, fetchTemplateExercises]);
 
   useEffect(() => {
     Animated.timing(plansIconAnim, {
@@ -89,6 +93,16 @@ export function WorkoutScreen() {
     () => todayWorkouts.find((item) => item.id === selectedWorkoutId) ?? todayWorkouts[0] ?? null,
     [selectedWorkoutId, todayWorkouts]
   );
+  const todayTemplateIds = useMemo(
+    () => new Set(todayWorkouts.map((item) => item.templateId).filter((item): item is string => Boolean(item))),
+    [todayWorkouts]
+  );
+  const remainingTemplatesToday = useMemo(
+    () => activeTemplates.filter((item) => !todayTemplateIds.has(item.id)),
+    [activeTemplates, todayTemplateIds]
+  );
+  const templatesNeedingRefresh = useMemo(() => getTemplatesNeedingRefresh(activeTemplates), [activeTemplates]);
+  const refreshMessageKey = templatesNeedingRefresh.length === 1 ? "workout.refreshBodySingle" : "workout.refreshBodyPlural";
   const plansIconRotate = useMemo(
     () =>
       plansIconAnim.interpolate({
@@ -119,10 +133,27 @@ export function WorkoutScreen() {
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[styles.container, { paddingTop: Math.max(insets.top + 8, 18) }]}
     >
+      <View style={styles.brandHeader}>
+        <Image source={appLogo} style={styles.brandLogo} resizeMode="contain" />
+        <Text style={[styles.brandTitle, { color: colors.text, fontFamily: typography.heading }]}>FitGamify</Text>
+      </View>
+
+      {templatesNeedingRefresh.length > 0 ? (
+        <Card style={[styles.refreshCard, { borderColor: colors.warning, backgroundColor: colors.surfaceAlt }]}>
+          <View style={styles.row}>
+            <MaterialCommunityIcons name="clock-alert-outline" size={18} color={colors.warning} />
+            <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("workout.refreshTitle")}</Text>
+          </View>
+          <Text style={{ color: colors.textMuted, fontFamily: typography.body }}>
+            {t(refreshMessageKey, { count: templatesNeedingRefresh.length, months: TEMPLATE_REFRESH_INTERVAL_MONTHS })}
+          </Text>
+        </Card>
+      ) : null}
+
       {todayWorkouts.length === 0 ? (
         <View style={styles.emptyStateWrap}>
-          <View style={[styles.heroIconWrap, { backgroundColor: colors.primarySoft, borderColor: colors.primaryShadow }]}>
-            <MaterialCommunityIcons name="dumbbell" size={30} color={colors.primary} />
+          <View style={[styles.heroIconWrap, { backgroundColor: colors.surface, borderColor: colors.primaryShadow }]}>
+            <Image source={appLogo} style={styles.heroLogo} resizeMode="contain" />
           </View>
 
           <Text style={[styles.homeTitle, { color: colors.text, fontFamily: typography.heading }]}>{t("workout.emptyTitle")}</Text>
@@ -135,14 +166,14 @@ export function WorkoutScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("workout.yourPlans")}</Text>
           </Pressable>
 
-          {templates.length === 0 ? (
+          {activeTemplates.length === 0 ? (
             <Card style={styles.planCard}>
               <Text style={{ color: colors.textMuted }}>{t("workout.noTemplates")}</Text>
               <Button label={t("workout.create")} onPress={() => void ensureTodayWorkout()} />
             </Card>
           ) : !showPlansList ? null : (
             <View style={styles.planList}>
-              {templates.map((item, index) => {
+              {activeTemplates.map((item, index) => {
                 const isExpanded = expandedTemplateId === item.id;
                 const templateExercises = templateExercisesById[item.id] ?? [];
                 const isLoadingExercises = loadingTemplateId === item.id;
@@ -263,6 +294,41 @@ export function WorkoutScreen() {
           {selectedWorkout ? (
             <WorkoutSessionCard workout={selectedWorkout} t={t} onSaveExercise={saveExercise} onCheckIn={doCheckIn} />
           ) : null}
+
+          <Card style={styles.addAnotherCard}>
+            <View style={styles.rowBetween}>
+              <View style={styles.row}>
+                <MaterialCommunityIcons name="plus-circle-outline" size={18} color={colors.primary} />
+                <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("workout.addAnother")}</Text>
+              </View>
+            </View>
+
+            {remainingTemplatesToday.length === 0 ? (
+              <Text style={{ color: colors.textMuted, fontFamily: typography.body }}>{t("workout.noMoreTemplatesToday")}</Text>
+            ) : (
+              <View style={styles.inlineTemplateList}>
+                {remainingTemplatesToday.map((item, index) => (
+                  <View
+                    key={item.id}
+                    style={[styles.inlineTemplateItem, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                  >
+                    <View style={styles.row}>
+                      <View style={[styles.badgeCircle, { backgroundColor: "#1F2A44" }]}>
+                        <Text style={[styles.badgeCircleText, { fontFamily: typography.body }]}>{String.fromCharCode(65 + index)}</Text>
+                      </View>
+                      <View>
+                        <Text style={[styles.planTitle, { color: colors.text, fontFamily: typography.title }]}>{item.muscleGroup}</Text>
+                        <Text style={{ color: colors.textMuted, fontFamily: typography.body }}>
+                          {t("workout.exerciseCount", { count: templateCounts[item.id] ?? 0 })}
+                        </Text>
+                      </View>
+                    </View>
+                    <Button label={t("workout.startNow")} size="sm" onPress={() => void createWorkoutFromTemplate(item.id)} />
+                  </View>
+                ))}
+              </View>
+            )}
+          </Card>
         </View>
       )}
     </ScrollView>
@@ -651,6 +717,20 @@ const styles = StyleSheet.create({
   emptyStateWrap: {
     gap: 10
   },
+  brandHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8
+  },
+  brandLogo: {
+    width: 36,
+    height: 36
+  },
+  brandTitle: {
+    fontSize: 22,
+    fontWeight: "900"
+  },
   heroIconWrap: {
     width: 84,
     height: 84,
@@ -659,6 +739,10 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     justifyContent: "center",
     alignItems: "center"
+  },
+  heroLogo: {
+    width: 58,
+    height: 58
   },
   homeTitle: {
     fontSize: 24,
@@ -688,6 +772,9 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: "800"
+  },
+  refreshCard: {
+    borderWidth: 1
   },
   planList: {
     gap: 10
@@ -761,6 +848,21 @@ const styles = StyleSheet.create({
   },
   activeWrap: {
     gap: 12
+  },
+  addAnotherCard: {
+    gap: 10
+  },
+  inlineTemplateList: {
+    gap: 8
+  },
+  inlineTemplateItem: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8
   },
   workoutToggleWrap: {
     gap: 8

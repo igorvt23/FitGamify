@@ -12,25 +12,28 @@ type BadgeProps = {
 export function Badge({ label, variant = "neutral", style }: BadgeProps) {
   const { colors, radius, typography } = useTheme();
 
-  const background =
-    variant === "success" ? colors.success : variant === "warning" ? colors.warning : colors.surfaceMuted;
-  const textColor = variant === "neutral" ? colors.text : "#FFFFFF";
+  const background = variant === "success" ? "#DCFCE7" : variant === "warning" ? colors.surfaceAlt : colors.surfaceMuted;
+  const textColor = variant === "success" ? "#15803D" : variant === "warning" ? colors.primaryStrong : colors.text;
+  const borderColor = variant === "success" ? "#86EFAC" : variant === "warning" ? colors.primary : colors.border;
 
   return (
-    <View style={[styles.base, { backgroundColor: background, borderRadius: radius.pill }, style]}>
-      <Text style={[styles.label, { color: textColor, fontFamily: typography.body }]}>{label}</Text>
+    <View style={[styles.base, { backgroundColor: background, borderRadius: radius.pill, borderColor }, style]}>
+      <Text style={[styles.label, { color: textColor, fontFamily: typography.title }]}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderWidth: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     alignSelf: "flex-start"
   },
   label: {
-    fontSize: 11,
-    fontWeight: "700"
+    fontSize: 10,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 1.1
   }
 });

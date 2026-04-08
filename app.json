@@ -5,11 +5,15 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "icon": "./src/img/logo_fitgamify.png",
+    "icon": "./src/img/logo_fitgamify_icon.png",
     "splash": {
       "image": "./src/img/logo_fitgamify.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
+    },
+    "notification": {
+      "icon": "./src/img/logo_fitgamify_icon.png",
+      "color": "#C62828"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -24,12 +28,12 @@
     "android": {
       "package": "com.fitgamify.app",
       "adaptiveIcon": {
-        "foregroundImage": "./src/img/logo_fitgamify.png",
+        "foregroundImage": "./src/img/logo_fitgamify_adaptive_foreground.png",
         "backgroundColor": "#FFFFFF"
       }
     },
     "web": {
-      "favicon": "./src/img/logo_fitgamify.png"
+      "favicon": "./src/img/logo_fitgamify_icon.png"
     },
     "plugins": [
       "expo-notifications",

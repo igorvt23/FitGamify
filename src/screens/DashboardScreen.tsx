@@ -82,15 +82,7 @@ export function DashboardScreen() {
     return { currentAvg, previousAvg, delta };
   }, [recordedSessions]);
 
-  const offensiveDaysInYear = useMemo(() => {
-    const year = new Date().getFullYear();
-    const uniqueDays = new Set(
-      sessions
-        .filter((session) => Boolean(session.checkedInAtIso) && session.dateIso.startsWith(`${year}-`))
-        .map((session) => session.dateIso)
-    );
-    return uniqueDays.size;
-  }, [sessions]);
+  const offensiveDaysInYear = useMemo(() => Math.max(0, profile?.currentStreak ?? 0), [profile?.currentStreak]);
 
   const offensiveLevel = useMemo(() => getOffensiveLevelByDays(offensiveDaysInYear), [offensiveDaysInYear]);
   const offensiveTitle = useMemo(

@@ -21,13 +21,13 @@ import { normalizeFitnessGoal } from "../core/fitnessGoal";
 
 const db = SQLite.openDatabaseSync("fitgamify.db");
 let workoutTemplatesHasLegacyWeekdayColumn: boolean | null = null;
-let exercisesLegacyColumns:
-  | {
-      hasSetColumn: boolean;
-      hasSetsColumn: boolean;
-      hasRepsColumn: boolean;
-    }
-  | null = null;
+type LegacySetRepColumns = {
+  hasSetColumn: boolean;
+  hasSetsColumn: boolean;
+  hasRepsColumn: boolean;
+};
+let exercisesLegacyColumns: LegacySetRepColumns | null = null;
+let templateExercisesLegacyColumns: LegacySetRepColumns | null = null;
 const WORKOUT_REMINDER_SETTINGS_KEY = "workout_reminder_settings";
 const DEFAULT_WORKOUT_REMINDER_SETTINGS: WorkoutReminderSettings = {
   enabled: false,
@@ -99,6 +99,7 @@ export async function initDatabase() {
       muscle_group TEXT NOT NULL,
       order_index INTEGER NOT NULL DEFAULT 0,
       assigned_weekdays TEXT NOT NULL DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
       created_at_iso TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS template_exercises (
@@ -107,6 +108,7 @@ export async function initDatabase() {
       exercise_name TEXT NOT NULL,
       rep_scheme TEXT NOT NULL DEFAULT '4x10',
       default_weight_kg REAL NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
       image_key TEXT NOT NULL,
       FOREIGN KEY(template_id) REFERENCES workout_templates(id) ON DELETE CASCADE
     );
@@ -178,15 +180,18 @@ export async function getSuggestedTemplatesForDate(dateIso: string): Promise<Wor
   if (mode === "weekday") {
     const weekday = getWeekdayFromIsoDate(dateIso);
     const templates = await getTemplates();
-    return templates.filter((item) => item.assignedWeekdays.includes(weekday));
+    return templates.filter((item) => item.isActive && item.assignedWeekdays.includes(weekday));
   }
 
   const next = await getNextTemplateInSequence();
-  return next ? [next] : [];
+  return next && next.isActive ? [next] : [];
 }
 
 export async function createWorkoutForDate(dateIso: string, templateId?: string | null): Promise<WorkoutWithExercises> {
   const template = templateId ? await getTemplateById(templateId) : await resolveNextTemplateForDate(dateIso);
+  if (templateId && template && !template.isActive) {
+    throw new Error("Este treino esta desativado.");
+  }
   const templateExercises = template ? await getTemplateExercises(template.id) : [];
   const sessionId = cryptoRandomId();
   const sessionIndex = await getNextSessionIndexForDate(dateIso);
@@ -239,20 +244,19 @@ export async function createWorkoutForDate(dateIso: string, templateId?: string 
     }
   ];
 
-  const sourceExercises =
-    templateExercises.length > 0
-      ? templateExercises.map((item) => ({
-          name: item.exerciseName,
-          repScheme: normalizeRepScheme(item.repScheme),
-          plannedWeightKg: item.defaultWeightKg,
-          weightKg: item.defaultWeightKg,
-          intensity: 5,
-          anxietyLevel: null,
-          isCompleted: false,
-          imageKey: item.imageKey,
-          setLogs: buildInitialSetLogs(item.repScheme)
-        }))
-      : fallbackExercises;
+  const sourceExercises = template
+    ? templateExercises.map((item) => ({
+        name: item.exerciseName,
+        repScheme: normalizeRepScheme(item.repScheme),
+        plannedWeightKg: item.defaultWeightKg,
+        weightKg: item.defaultWeightKg,
+        intensity: 5,
+        anxietyLevel: null,
+        isCompleted: false,
+        imageKey: item.imageKey,
+        setLogs: buildInitialSetLogs(item.repScheme)
+      }))
+    : fallbackExercises;
 
   for (const entry of sourceExercises) {
     const latest = await getLatestExerciseMetricsByName(entry.name);
@@ -470,21 +474,39 @@ export async function createExerciseLibraryItem(name: string, imageKey: string) 
 }
 
 export async function getTemplates(): Promise<WorkoutTemplate[]> {
-  return db.getAllAsync<WorkoutTemplate>(
-    "SELECT id, name, muscle_group as muscleGroup, order_index as orderIndex, assigned_weekdays as assignedWeekdaysRaw, created_at_iso as createdAtIso FROM workout_templates ORDER BY order_index ASC, created_at_iso ASC"
-  ).then((rows) =>
-    rows.map((item) => ({
-      ...item,
-      assignedWeekdays: parseWeekdays((item as WorkoutTemplate & { assignedWeekdaysRaw?: string }).assignedWeekdaysRaw)
-    }))
+  const rows = await db.getAllAsync<
+    Omit<WorkoutTemplate, "assignedWeekdays" | "isActive"> & {
+      assignedWeekdaysRaw?: string;
+      isActiveRaw?: number;
+    }
+  >(
+    "SELECT id, name, muscle_group as muscleGroup, order_index as orderIndex, assigned_weekdays as assignedWeekdaysRaw, is_active as isActiveRaw, created_at_iso as createdAtIso FROM workout_templates ORDER BY order_index ASC, created_at_iso ASC"
   );
+  return rows.map((item) => ({
+    id: item.id,
+    name: item.name,
+    muscleGroup: item.muscleGroup,
+    orderIndex: item.orderIndex,
+    assignedWeekdays: parseWeekdays(item.assignedWeekdaysRaw),
+    createdAtIso: item.createdAtIso,
+    isActive: item.isActiveRaw == null ? true : Boolean(item.isActiveRaw)
+  }));
 }
 
-export async function getTemplateExercises(templateId: string): Promise<TemplateExercise[]> {
-  return db.getAllAsync<TemplateExercise>(
-    "SELECT id, template_id as templateId, exercise_name as exerciseName, rep_scheme as repScheme, default_weight_kg as defaultWeightKg, image_key as imageKey FROM template_exercises WHERE template_id = ? ORDER BY rowid ASC",
+export async function getTemplateExercises(templateId: string, includeInactive = false): Promise<TemplateExercise[]> {
+  const whereActiveClause = includeInactive ? "" : " AND is_active = 1";
+  const rows = await db.getAllAsync<
+    Omit<TemplateExercise, "isActive"> & {
+      isActiveRaw?: number;
+    }
+  >(
+    `SELECT id, template_id as templateId, exercise_name as exerciseName, rep_scheme as repScheme, default_weight_kg as defaultWeightKg, image_key as imageKey, is_active as isActiveRaw FROM template_exercises WHERE template_id = ?${whereActiveClause} ORDER BY rowid ASC`,
     templateId
   );
+  return rows.map((item) => ({
+    ...item,
+    isActive: item.isActiveRaw == null ? true : Boolean(item.isActiveRaw)
+  }));
 }
 
 export async function createTemplate(name: string, muscleGroup: string, assignedWeekdays: Weekday[] = [], orderIndex?: number): Promise<string> {
@@ -519,15 +541,14 @@ export async function addExerciseToTemplateWithWeight(
   defaultWeightKg: number,
   imageKey: string
 ) {
-  await db.runAsync(
-    "INSERT INTO template_exercises (id, template_id, exercise_name, rep_scheme, default_weight_kg, image_key) VALUES (?, ?, ?, ?, ?, ?)",
-    cryptoRandomId(),
+  await insertTemplateExerciseRow({
+    id: cryptoRandomId(),
     templateId,
-    exerciseName.trim(),
-    normalizeRepScheme(repScheme),
-    Math.max(0, defaultWeightKg),
+    exerciseName,
+    repScheme,
+    defaultWeightKg,
     imageKey
-  );
+  });
 }
 
 export async function updateTemplate(templateId: string, name: string, muscleGroup: string, assignedWeekdays: Weekday[]) {
@@ -545,6 +566,10 @@ export async function deleteTemplate(templateId: string) {
   await normalizeTemplateOrder();
 }
 
+export async function setTemplateActive(templateId: string, isActive: boolean) {
+  await db.runAsync("UPDATE workout_templates SET is_active = ? WHERE id = ?", isActive ? 1 : 0, templateId);
+}
+
 export async function updateTemplateExercise(
   exerciseId: string,
   params: {
@@ -554,18 +579,43 @@ export async function updateTemplateExercise(
     imageKey: string;
   }
 ) {
-  await db.runAsync(
-    "UPDATE template_exercises SET exercise_name = ?, rep_scheme = ?, default_weight_kg = ?, image_key = ? WHERE id = ?",
+  const columns = await getTemplateExercisesLegacyColumns();
+  const normalizedRepScheme = normalizeRepScheme(params.repScheme);
+  const { sets, reps } = extractLegacySetAndRepValues(normalizedRepScheme);
+  const assignments = ["exercise_name = ?", "rep_scheme = ?", "default_weight_kg = ?", "image_key = ?"];
+  const values: Array<string | number> = [
     params.exerciseName.trim(),
-    normalizeRepScheme(params.repScheme),
+    normalizedRepScheme,
     Math.max(0, params.defaultWeightKg),
-    params.imageKey,
-    exerciseId
+    params.imageKey
+  ];
+
+  if (columns.hasSetColumn) {
+    assignments.push(`"set" = ?`);
+    values.push(sets);
+  }
+  if (columns.hasSetsColumn) {
+    assignments.push("sets = ?");
+    values.push(sets);
+  }
+  if (columns.hasRepsColumn) {
+    assignments.push("reps = ?");
+    values.push(reps);
+  }
+
+  values.push(exerciseId);
+  await db.runAsync(
+    `UPDATE template_exercises SET ${assignments.join(", ")} WHERE id = ?`,
+    ...values
   );
 }
 
 export async function deleteTemplateExercise(exerciseId: string) {
   await db.runAsync("DELETE FROM template_exercises WHERE id = ?", exerciseId);
+}
+
+export async function setTemplateExerciseActive(exerciseId: string, isActive: boolean) {
+  await db.runAsync("UPDATE template_exercises SET is_active = ? WHERE id = ?", isActive ? 1 : 0, exerciseId);
 }
 
 export async function clearTemplateExercises(templateId: string) {
@@ -621,7 +671,7 @@ export async function exportBackupPayload(): Promise<CloudBackupPayload> {
 
   const templateExercises: TemplateExercise[] = [];
   for (const template of templates) {
-    const entries = await getTemplateExercises(template.id);
+    const entries = await getTemplateExercises(template.id, true);
     templateExercises.push(...entries);
   }
 
@@ -705,7 +755,7 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
   }
 
   for (let index = 0; index < payload.templates.length; index += 1) {
-    const item = payload.templates[index] as WorkoutTemplate & { weekday?: number };
+    const item = payload.templates[index] as WorkoutTemplate & { weekday?: number; isActive?: boolean };
     const legacyWeekdayValue = typeof item.weekday === "number" ? normalizeWeekday(item.weekday) : null;
     await insertWorkoutTemplateRow({
       id: item.id,
@@ -713,22 +763,28 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
       muscleGroup: item.muscleGroup,
       orderIndex: item.orderIndex ?? legacyWeekdayValue ?? index,
       assignedWeekdays: item.assignedWeekdays ?? (legacyWeekdayValue != null ? [legacyWeekdayValue] : []),
+      isActive: item.isActive ?? true,
       createdAtIso: item.createdAtIso ?? new Date().toISOString(),
       legacyWeekday: legacyWeekdayValue
     });
   }
 
   for (const item of payload.templateExercises) {
-    const legacyItem = item as TemplateExercise & { sets?: number; reps?: number; defaultWeightKg?: number };
-    await db.runAsync(
-      "INSERT INTO template_exercises (id, template_id, exercise_name, rep_scheme, default_weight_kg, image_key) VALUES (?, ?, ?, ?, ?, ?)",
-      item.id,
-      item.templateId,
-      item.exerciseName,
-      normalizeRepScheme(item.repScheme ?? `${legacyItem.sets ?? 4}x${legacyItem.reps ?? 10}`),
-      item.defaultWeightKg ?? legacyItem.defaultWeightKg ?? 0,
-      item.imageKey
-    );
+    const legacyItem = item as TemplateExercise & {
+      sets?: number;
+      reps?: number;
+      defaultWeightKg?: number;
+      isActive?: boolean;
+    };
+    await insertTemplateExerciseRow({
+      id: item.id,
+      templateId: item.templateId,
+      exerciseName: item.exerciseName,
+      repScheme: item.repScheme ?? `${legacyItem.sets ?? 4}x${legacyItem.reps ?? 10}`,
+      defaultWeightKg: item.defaultWeightKg ?? legacyItem.defaultWeightKg ?? 0,
+      imageKey: item.imageKey || "dumbbell",
+      isActive: legacyItem.isActive ?? true
+    });
   }
 
   for (const item of payload.exerciseLibrary) {
@@ -803,18 +859,31 @@ async function getProfileOrNull(): Promise<UserProfile | null> {
 
 async function getTemplateById(id: string): Promise<WorkoutTemplate | null> {
   const item =
-    (await db.getFirstAsync<WorkoutTemplate & { assignedWeekdaysRaw?: string }>(
-      "SELECT id, name, muscle_group as muscleGroup, order_index as orderIndex, assigned_weekdays as assignedWeekdaysRaw, created_at_iso as createdAtIso FROM workout_templates WHERE id = ? LIMIT 1",
+    (await db.getFirstAsync<
+      Omit<WorkoutTemplate, "assignedWeekdays" | "isActive"> & {
+        assignedWeekdaysRaw?: string;
+        isActiveRaw?: number;
+      }
+    >(
+      "SELECT id, name, muscle_group as muscleGroup, order_index as orderIndex, assigned_weekdays as assignedWeekdaysRaw, is_active as isActiveRaw, created_at_iso as createdAtIso FROM workout_templates WHERE id = ? LIMIT 1",
       id
     )) ?? null;
   if (!item) {
     return null;
   }
-  return { ...item, assignedWeekdays: parseWeekdays(item.assignedWeekdaysRaw) };
+  return {
+    id: item.id,
+    name: item.name,
+    muscleGroup: item.muscleGroup,
+    orderIndex: item.orderIndex,
+    assignedWeekdays: parseWeekdays(item.assignedWeekdaysRaw),
+    createdAtIso: item.createdAtIso,
+    isActive: item.isActiveRaw == null ? true : Boolean(item.isActiveRaw)
+  };
 }
 
 async function getNextTemplateInSequence(): Promise<WorkoutTemplate | null> {
-  const templates = await getTemplates();
+  const templates = (await getTemplates()).filter((item) => item.isActive);
   if (templates.length === 0) {
     return null;
   }
@@ -928,8 +997,10 @@ async function runMigration() {
   await addColumnIfMissing("workout_sessions", "session_index", "INTEGER NOT NULL DEFAULT 0");
   await addColumnIfMissing("workout_templates", "order_index", "INTEGER NOT NULL DEFAULT 0");
   await addColumnIfMissing("workout_templates", "assigned_weekdays", "TEXT NOT NULL DEFAULT ''");
+  await addColumnIfMissing("workout_templates", "is_active", "INTEGER NOT NULL DEFAULT 1");
   await addColumnIfMissing("template_exercises", "rep_scheme", "TEXT NOT NULL DEFAULT '4x10'");
   await addColumnIfMissing("template_exercises", "default_weight_kg", "REAL NOT NULL DEFAULT 0");
+  await addColumnIfMissing("template_exercises", "is_active", "INTEGER NOT NULL DEFAULT 1");
   await addColumnIfMissing("exercises", "rep_scheme", "TEXT NOT NULL DEFAULT '4x10'");
   await addColumnIfMissing("exercises", "planned_weight_kg", "REAL NOT NULL DEFAULT 0");
   await addColumnIfMissing("exercises", "is_completed", "INTEGER NOT NULL DEFAULT 0");
@@ -1048,6 +1119,7 @@ type WorkoutTemplateInsertInput = {
   muscleGroup: string;
   orderIndex: number;
   assignedWeekdays: Weekday[];
+  isActive?: boolean;
   createdAtIso: string;
   legacyWeekday?: number | null;
 };
@@ -1066,34 +1138,47 @@ type ExerciseInsertInput = {
   setLogs: ExerciseSetLog[];
 };
 
+type TemplateExerciseInsertInput = {
+  id: string;
+  templateId: string;
+  exerciseName: string;
+  repScheme: string;
+  defaultWeightKg: number;
+  imageKey: string;
+  isActive?: boolean;
+};
+
 async function insertWorkoutTemplateRow(input: WorkoutTemplateInsertInput) {
   const normalizedOrderIndex = Number.isFinite(input.orderIndex) ? Math.max(0, Math.floor(input.orderIndex)) : 0;
   const normalizedAssignedWeekdays = normalizeAssignedWeekdays(input.assignedWeekdays);
   const serializedWeekdays = serializeWeekdays(normalizedAssignedWeekdays);
+  const normalizedIsActive = input.isActive ?? true;
   const createdAtIso = input.createdAtIso || new Date().toISOString();
 
   if (await hasLegacyWeekdayColumn()) {
     const legacyWeekday = resolveLegacyWeekday(normalizedAssignedWeekdays, input.legacyWeekday ?? normalizedOrderIndex);
     await db.runAsync(
-      "INSERT INTO workout_templates (id, name, muscle_group, weekday, order_index, assigned_weekdays, created_at_iso) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO workout_templates (id, name, muscle_group, weekday, order_index, assigned_weekdays, is_active, created_at_iso) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       input.id,
       input.name,
       input.muscleGroup,
       legacyWeekday,
       normalizedOrderIndex,
       serializedWeekdays,
+      normalizedIsActive ? 1 : 0,
       createdAtIso
     );
     return;
   }
 
   await db.runAsync(
-    "INSERT INTO workout_templates (id, name, muscle_group, order_index, assigned_weekdays, created_at_iso) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO workout_templates (id, name, muscle_group, order_index, assigned_weekdays, is_active, created_at_iso) VALUES (?, ?, ?, ?, ?, ?, ?)",
     input.id,
     input.name,
     input.muscleGroup,
     normalizedOrderIndex,
     serializedWeekdays,
+    normalizedIsActive ? 1 : 0,
     createdAtIso
   );
 }
@@ -1152,6 +1237,45 @@ async function insertExerciseRow(input: ExerciseInsertInput) {
   );
 }
 
+async function insertTemplateExerciseRow(input: TemplateExerciseInsertInput) {
+  const columns = await getTemplateExercisesLegacyColumns();
+  const normalizedRepScheme = normalizeRepScheme(input.repScheme);
+  const normalizedDefaultWeightKg = Math.max(0, Number(input.defaultWeightKg) || 0);
+  const normalizedIsActive = input.isActive ?? true;
+  const { sets, reps } = extractLegacySetAndRepValues(normalizedRepScheme);
+
+  const columnNames = ["id", "template_id", "exercise_name", "rep_scheme", "default_weight_kg", "is_active", "image_key"];
+  const values: Array<string | number> = [
+    input.id,
+    input.templateId,
+    input.exerciseName.trim(),
+    normalizedRepScheme,
+    normalizedDefaultWeightKg,
+    normalizedIsActive ? 1 : 0,
+    input.imageKey || "dumbbell"
+  ];
+
+  if (columns.hasSetColumn) {
+    columnNames.push(`"set"`);
+    values.push(sets);
+  }
+  if (columns.hasSetsColumn) {
+    columnNames.push("sets");
+    values.push(sets);
+  }
+  if (columns.hasRepsColumn) {
+    columnNames.push("reps");
+    values.push(reps);
+  }
+
+  await db.runAsync(
+    `INSERT INTO template_exercises (${columnNames.join(", ")}) VALUES (${columnNames
+      .map(() => "?")
+      .join(", ")})`,
+    ...values
+  );
+}
+
 async function hasLegacyWeekdayColumn() {
   if (workoutTemplatesHasLegacyWeekdayColumn != null) {
     return workoutTemplatesHasLegacyWeekdayColumn;
@@ -1173,6 +1297,20 @@ async function getExercisesLegacyColumns() {
     hasRepsColumn: names.has("reps")
   };
   return exercisesLegacyColumns;
+}
+
+async function getTemplateExercisesLegacyColumns() {
+  if (templateExercisesLegacyColumns) {
+    return templateExercisesLegacyColumns;
+  }
+  const tableInfo = await db.getAllAsync<{ name: string }>("PRAGMA table_info(template_exercises)");
+  const names = new Set(tableInfo.map((col) => col.name.toLowerCase()));
+  templateExercisesLegacyColumns = {
+    hasSetColumn: names.has("set"),
+    hasSetsColumn: names.has("sets"),
+    hasRepsColumn: names.has("reps")
+  };
+  return templateExercisesLegacyColumns;
 }
 
 function normalizeAssignedWeekdays(weekdays: Weekday[] | null | undefined): Weekday[] {

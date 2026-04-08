@@ -10,10 +10,11 @@ type CardProps = {
 };
 
 export function Card({ children, style, variant = "default" }: CardProps) {
-  const { colors, radius, shadow } = useTheme();
+  const { colors, radius, isDark } = useTheme();
 
   const backgroundColor =
     variant === "muted" ? colors.surfaceMuted : variant === "accent" ? colors.surfaceAlt : colors.surfaceRaised;
+  const borderWidth = variant === "accent" ? 4 : 2;
 
   return (
     <View
@@ -22,9 +23,14 @@ export function Card({ children, style, variant = "default" }: CardProps) {
         {
           backgroundColor,
           borderColor: colors.border,
-          borderRadius: radius.lg
+          borderRadius: radius.lg,
+          borderWidth,
+          shadowColor: isDark ? "#000000" : "#CBD5E1",
+          shadowOpacity: isDark ? 0.45 : 1,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 4
         },
-        shadow.card,
         style
       ]}
     >
@@ -35,8 +41,7 @@ export function Card({ children, style, variant = "default" }: CardProps) {
 
 const styles = StyleSheet.create({
   base: {
-    padding: 14,
-    borderWidth: 1,
-    gap: 8
+    padding: 16,
+    gap: 10
   }
 });

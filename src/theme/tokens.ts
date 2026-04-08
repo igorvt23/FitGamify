@@ -9,16 +9,29 @@ export const spacing = {
 } as const;
 
 export const radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
+  sm: 12,
+  md: 16,
+  lg: 24,
+  xl: 32,
   pill: 999
 } as const;
 
 export const palette = {
   white: "#FFFFFF",
   black: "#0B0B0B",
+  slate: {
+    50: "#F8FAFC",
+    100: "#F1F5F9",
+    200: "#E2E8F0",
+    300: "#CBD5E1",
+    400: "#94A3B8",
+    500: "#64748B",
+    600: "#475569",
+    700: "#334155",
+    800: "#1E293B",
+    900: "#0F172A",
+    950: "#020617"
+  },
   red: {
     50: "#FFF1F2",
     100: "#FFE4E6",
@@ -76,49 +89,49 @@ export type ThemeColors = {
 };
 
 export const lightColors: ThemeColors = {
-  background: "#F6F8FC",
-  surface: "#FFFFFF",
-  surfaceAlt: "#FFECEE",
-  surfaceMuted: "#F2F5FA",
+  background: palette.slate[50],
+  surface: palette.white,
+  surfaceAlt: "#FEE2E2",
+  surfaceMuted: palette.slate[100],
   surfaceRaised: "#FFFFFF",
-  text: "#0F172A",
-  textMuted: "#5F6B7A",
-  border: "#E4E9F2",
-  primary: "#FF2D2D",
-  primarySoft: "#FFE1E1",
-  primaryStrong: "#E11D2E",
-  primaryShadow: "#FFD3D3",
+  text: palette.slate[800],
+  textMuted: palette.slate[500],
+  border: palette.slate[200],
+  primary: palette.red[500],
+  primarySoft: "#FEE2E2",
+  primaryStrong: palette.red[600],
+  primaryShadow: palette.red[700],
   success: palette.green[500],
   warning: palette.yellow[500],
   danger: palette.red[600],
-  chip: "#FFE7EA",
-  chipText: "#C1121F",
-  tabBar: "#FFFFFF",
-  tabBarBorder: "#E6ECF4",
-  inputBg: "#F3F6FB"
+  chip: palette.white,
+  chipText: palette.slate[700],
+  tabBar: palette.white,
+  tabBarBorder: palette.slate[200],
+  inputBg: palette.slate[100]
 };
 
 export const darkColors: ThemeColors = {
-  background: "#0B0F17",
-  surface: "#141A26",
-  surfaceAlt: "#1F1720",
-  surfaceMuted: "#1A2232",
-  surfaceRaised: "#1B2333",
-  text: "#F8FAFC",
-  textMuted: "#A5B0C2",
-  border: "#273244",
-  primary: "#FF4D4D",
-  primarySoft: "#3A1B22",
-  primaryStrong: "#FF8A8A",
-  primaryShadow: "#40161D",
+  background: palette.slate[950],
+  surface: palette.slate[900],
+  surfaceAlt: "#2A1A1A",
+  surfaceMuted: palette.slate[800],
+  surfaceRaised: palette.slate[900],
+  text: palette.slate[50],
+  textMuted: palette.slate[400],
+  border: palette.slate[700],
+  primary: palette.red[400],
+  primarySoft: "#3F1D1D",
+  primaryStrong: palette.red[300],
+  primaryShadow: palette.red[700],
   success: "#22C55E",
-  warning: "#FBBF24",
-  danger: "#EF4444",
-  chip: "#2B1B20",
-  chipText: "#FFB4BE",
-  tabBar: "#101624",
-  tabBarBorder: "#1C2433",
-  inputBg: "#0F1420"
+  warning: "#F59E0B",
+  danger: palette.red[400],
+  chip: palette.slate[800],
+  chipText: palette.slate[200],
+  tabBar: palette.slate[900],
+  tabBarBorder: palette.slate[700],
+  inputBg: palette.slate[800]
 };
 
 export const typography = {
@@ -131,16 +144,16 @@ export const typography = {
 export const shadow = {
   card: {
     shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3
+    shadowOpacity: 0.18,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5
   },
   soft: {
     shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 1
   }
 } as const;

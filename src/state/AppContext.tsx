@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useColorScheme } from "react-native";
+import { AppState, useColorScheme } from "react-native";
 
 import { resolveNewAchievements } from "../core/gamification";
-import { calculateUpdatedStreak } from "../core/streak";
+import { calculateUpdatedStreak, reconcileStreakAfterMissedDay } from "../core/streak";
 import { normalizeFitnessGoal } from "../core/fitnessGoal";
 import {
   addExerciseToTemplateWithWeight,
@@ -36,6 +36,8 @@ import {
   setWorkoutReminderSettings as saveWorkoutReminderSettings,
   setScheduleMode,
   setWorkoutIntensity,
+  setTemplateActive,
+  setTemplateExerciseActive,
   updateProfileDisplayName,
   updateProfileDetails,
   updateProfileStreak,
@@ -46,6 +48,7 @@ import { applyWorkoutReminderSchedule, sendMotivationalNotification } from "../s
 import {
   getCurrentAuthUser,
   getUserProfile,
+  sendPasswordResetEmail,
   signInWithEmail,
   signOutCloud,
   signUpWithEmail,
@@ -122,9 +125,12 @@ type AppContextData = {
     imageKey: string;
   }) => Promise<void>;
   deleteTemplateExerciseById: (exerciseId: string) => Promise<void>;
-  fetchTemplateExercises: (templateId: string) => Promise<TemplateExercise[]>;
+  setTemplateActiveById: (templateId: string, isActive: boolean) => Promise<void>;
+  setTemplateExerciseActiveById: (exerciseId: string, isActive: boolean) => Promise<void>;
+  fetchTemplateExercises: (templateId: string, includeInactive?: boolean) => Promise<TemplateExercise[]>;
   signUp: (payload: SignUpInput) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  recoverPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   backupNow: () => Promise<void>;
   restoreBackupNow: () => Promise<void>;
@@ -211,6 +217,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
   const [suggestedTemplatesToday, setSuggestedTemplatesToday] = useState<WorkoutTemplate[]>([]);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trackedDayRef = useRef(todayIso());
 
   const scheduleSync = useCallback(
     (delayMs = 2000) => {
@@ -294,10 +301,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       getSuggestedTemplatesForDate(todayIso())
     ]);
 
+    const resolvedStreak = reconcileStreakAfterMissedDay(userProfile.currentStreak, userProfile.lastCheckInAtIso, new Date());
+    const resolvedProfile =
+      resolvedStreak === userProfile.currentStreak ? userProfile : { ...userProfile, currentStreak: resolvedStreak };
+
+    if (resolvedStreak !== userProfile.currentStreak) {
+      await updateProfileStreak(userProfile.id, resolvedStreak, userProfile.lastCheckInAtIso);
+    }
+
     setCurrentWorkout(today);
     setTodayWorkouts(todaySessions);
     setSessions(allSessions);
-    setProfile(userProfile);
+    setProfile(resolvedProfile);
     setAchievements(unlockedAchievements);
     setErrors(recentErrors);
     setScheduleModeState(currentScheduleMode);
@@ -327,6 +342,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void applyWorkoutReminderSchedule(workoutReminderSettings, language);
   }, [language, workoutReminderSettings]);
+
+  const refreshIfDayChanged = useCallback(async () => {
+    const currentDayIso = todayIso();
+    if (trackedDayRef.current === currentDayIso) {
+      return;
+    }
+    await refreshAll();
+    trackedDayRef.current = currentDayIso;
+  }, [refreshAll]);
+
+  useEffect(() => {
+    const appStateSubscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void refreshIfDayChanged();
+      }
+    });
+    const dayCheckInterval = setInterval(() => {
+      void refreshIfDayChanged();
+    }, 60_000);
+
+    return () => {
+      appStateSubscription.remove();
+      clearInterval(dayCheckInterval);
+    };
+  }, [refreshIfDayChanged]);
 
   const backupNow = useCallback(async () => {
     if (!authUser) {
@@ -589,8 +629,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [refreshAll, syncAfterChange]
   );
 
-  const fetchTemplateExercises = useCallback(async (templateId: string) => {
-    return getTemplateExercises(templateId);
+  const setTemplateActiveById = useCallback(
+    async (templateId: string, isActive: boolean) => {
+      await setTemplateActive(templateId, isActive);
+      await refreshAll();
+      await syncAfterChange();
+    },
+    [refreshAll, syncAfterChange]
+  );
+
+  const setTemplateExerciseActiveById = useCallback(
+    async (exerciseId: string, isActive: boolean) => {
+      await setTemplateExerciseActive(exerciseId, isActive);
+      await refreshAll();
+      await syncAfterChange();
+    },
+    [refreshAll, syncAfterChange]
+  );
+
+  const fetchTemplateExercises = useCallback(async (templateId: string, includeInactive = false) => {
+    return getTemplateExercises(templateId, includeInactive);
   }, []);
 
   const signUp = useCallback(async (payload: SignUpInput) => {
@@ -630,6 +688,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     },
     [refreshAll]
   );
+
+  const recoverPassword = useCallback(async (email: string) => {
+    await sendPasswordResetEmail(email.trim());
+  }, []);
 
   const signOut = useCallback(async () => {
     await signOutCloud();
@@ -709,9 +771,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addExerciseToTemplateById,
       updateTemplateExerciseById,
       deleteTemplateExerciseById,
+      setTemplateActiveById,
+      setTemplateExerciseActiveById,
       fetchTemplateExercises,
       signUp,
       signIn,
+      recoverPassword,
       signOut,
       backupNow,
       restoreBackupNow,
@@ -750,9 +815,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addExerciseToTemplateById,
       updateTemplateExerciseById,
       deleteTemplateExerciseById,
+      setTemplateActiveById,
+      setTemplateExerciseActiveById,
       fetchTemplateExercises,
       signUp,
       signIn,
+      recoverPassword,
       signOut,
       backupNow,
       restoreBackupNow,

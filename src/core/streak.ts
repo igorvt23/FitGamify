@@ -3,6 +3,9 @@ export function calculateUpdatedStreak(lastCheckInIso: string | null, now = new 
     return 1;
   }
   const lastDate = new Date(lastCheckInIso);
+  if (Number.isNaN(lastDate.getTime())) {
+    return 1;
+  }
   const diff = daysBetween(startOfDay(lastDate), startOfDay(now));
 
   if (diff === 0) {
@@ -12,6 +15,24 @@ export function calculateUpdatedStreak(lastCheckInIso: string | null, now = new 
     return 1;
   }
   return -1;
+}
+
+export function reconcileStreakAfterMissedDay(currentStreak: number, lastCheckInIso: string | null, now = new Date()): number {
+  const normalizedCurrent = Math.max(0, Math.floor(Number(currentStreak) || 0));
+  if (!lastCheckInIso) {
+    return 0;
+  }
+
+  const lastDate = new Date(lastCheckInIso);
+  if (Number.isNaN(lastDate.getTime())) {
+    return 0;
+  }
+
+  const diff = daysBetween(startOfDay(lastDate), startOfDay(now));
+  if (diff > 1) {
+    return 0;
+  }
+  return normalizedCurrent;
 }
 
 function startOfDay(date: Date) {

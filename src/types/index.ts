@@ -46,6 +46,7 @@ export type WorkoutTemplate = {
   orderIndex: number;
   assignedWeekdays: Weekday[];
   createdAtIso: string;
+  isActive: boolean;
 };
 
 export type TemplateExercise = {
@@ -55,6 +56,7 @@ export type TemplateExercise = {
   repScheme: string;
   defaultWeightKg: number;
   imageKey: string;
+  isActive: boolean;
 };
 
 export type WorkoutSession = {
