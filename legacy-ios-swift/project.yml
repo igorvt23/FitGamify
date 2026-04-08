@@ -1,0 +1,37 @@
+name: FitGamify
+options:
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.seuusuario.fitgamify
+    SWIFT_VERSION: 5.10
+targets:
+  FitGamify:
+    type: application
+    platform: iOS
+    sources:
+      - path: FitGamify
+    settings:
+      base:
+        INFOPLIST_FILE: FitGamify/Info.plist
+    info:
+      path: FitGamify/Info.plist
+      properties:
+        UILaunchScreen:
+          UIColorName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        CFBundleDisplayName: FitGamify
+        NSUserTrackingUsageDescription: "Este app nao usa rastreamento para anuncios."
+        NSUserNotificationUsageDescription: "Receba lembretes para manter o treino em dia."
+  FitGamifyTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FitGamifyTests
+    dependencies:
+      - target: FitGamify
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/FitGamify.app/FitGamify"

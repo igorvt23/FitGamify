@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "FitGamify",
+    "slug": "fitgamify",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./src/img/logo_fitgamify.png",
+    "splash": {
+      "image": "./src/img/logo_fitgamify.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fitgamify.app",
+      "infoPlist": {
+        "NSUserNotificationUsageDescription": "Receba lembretes para manter seu treino em dia."
+      }
+    },
+    "android": {
+      "package": "com.fitgamify.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./src/img/logo_fitgamify.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "web": {
+      "favicon": "./src/img/logo_fitgamify.png"
+    },
+    "plugins": [
+      "expo-notifications",
+      "expo-font"
+    ]
+  }
+}
