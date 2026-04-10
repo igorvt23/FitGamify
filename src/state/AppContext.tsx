@@ -95,7 +95,7 @@ type AppContextData = {
   ensureTodayWorkout: () => Promise<void>;
   createWorkoutFromTemplate: (templateId?: string | null) => Promise<void>;
   saveExercise: (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; anxietyLevel: number | null; isCompleted: boolean }) => Promise<void>;
-  doCheckIn: (translate: (key: string) => string, sessionId?: string, intensity?: number | null) => Promise<void>;
+  doCheckIn: (translate: (key: string) => string, sessionId?: string, intensity?: number | null) => Promise<Achievement[]>;
   setTheme: (theme: AppTheme) => void;
   setLanguage: (language: AppLanguage) => void;
   setWorkoutScheduleMode: (mode: WorkoutScheduleMode) => Promise<void>;
@@ -449,7 +449,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (translate: (key: string) => string, sessionId?: string, intensity?: number | null) => {
       const targetWorkout = sessionId ? todayWorkouts.find((item) => item.id === sessionId) ?? null : currentWorkout;
       if (!targetWorkout || !profile || targetWorkout.checkedInAtIso) {
-        return;
+        return [];
       }
 
       const nowIso = new Date().toISOString();
@@ -492,10 +492,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         void sendMotivationalNotification(translate);
         scheduleSync();
+        return newOnes;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Falha no check-in";
         await logError("checkin", message);
         setErrors(await getRecentErrors());
+        return [];
       }
     },
     [achievements, currentWorkout, profile, scheduleSync, sessions, todayWorkouts]

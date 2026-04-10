@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAppContext } from "../state/AppContext";
 import { useI18n } from "../i18n";
-import { DifficultyLevel, Exercise, ExerciseSetLog, TemplateExercise, WorkoutWithExercises } from "../types";
+import { Achievement, DifficultyLevel, Exercise, ExerciseSetLog, TemplateExercise, WorkoutWithExercises } from "../types";
 import { useTheme } from "../theme/useTheme";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -344,7 +344,7 @@ function WorkoutSessionCard({
   workout: WorkoutWithExercises;
   t: (key: string, options?: Record<string, unknown>) => string;
   onSaveExercise: (params: { exerciseId: string; weightKg: number; setLogs: ExerciseSetLog[]; anxietyLevel: number | null; isCompleted: boolean }) => Promise<void>;
-  onCheckIn: (translate: (key: string) => string, sessionId?: string, intensity?: number | null) => Promise<void>;
+  onCheckIn: (translate: (key: string) => string, sessionId?: string, intensity?: number | null) => Promise<Achievement[]>;
 }) {
   const { colors, typography, isDark } = useTheme();
   const [queueIds, setQueueIds] = useState<string[]>([]);
@@ -352,6 +352,10 @@ function WorkoutSessionCard({
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [effortValue, setEffortValue] = useState(5);
   const [finalizing, setFinalizing] = useState(false);
+  const [pendingUnlocks, setPendingUnlocks] = useState<Achievement[]>([]);
+  const [unlockTotalCount, setUnlockTotalCount] = useState(0);
+  const [unlockModalVisible, setUnlockModalVisible] = useState(false);
+  const unlockCardAnim = useRef(new Animated.Value(0)).current;
 
   const exerciseKey = useMemo(() => workout.exercises.map((item) => item.id).join("|"), [workout.exercises]);
   const exerciseMap = useMemo(() => new Map(workout.exercises.map((item) => [item.id, item])), [workout.exercises]);
@@ -383,7 +387,23 @@ function WorkoutSessionCard({
   useEffect(() => {
     setFinalizeOpen(false);
     setEffortValue(5);
+    setPendingUnlocks([]);
+    setUnlockTotalCount(0);
+    setUnlockModalVisible(false);
   }, [workout.id]);
+
+  useEffect(() => {
+    if (!unlockModalVisible || pendingUnlocks.length === 0) {
+      return;
+    }
+    unlockCardAnim.setValue(0);
+    Animated.spring(unlockCardAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 15,
+      bounciness: 10
+    }).start();
+  }, [pendingUnlocks.length, unlockCardAnim, unlockModalVisible]);
 
   const orderedExercises = useMemo(
     () => queueIds.map((id) => exerciseMap.get(id)).filter((item): item is Exercise => Boolean(item)),
@@ -395,6 +415,15 @@ function WorkoutSessionCard({
   const progress = workout.exercises.length === 0 ? 0 : completedCount / workout.exercises.length;
   const canCheckIn = workout.exercises.length > 0 && workout.exercises.every((item) => item.isCompleted);
   const showDoneState = canCheckIn || Boolean(workout.checkedInAtIso);
+  const activeUnlock = pendingUnlocks[0] ?? null;
+  const unlockScale = unlockCardAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.9, 1]
+  });
+  const unlockOpacity = unlockCardAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1]
+  });
 
   const handleSkipExercise = () => {
     if (!activeExercise) {
@@ -430,11 +459,26 @@ function WorkoutSessionCard({
 
     setFinalizing(true);
     try {
-      await onCheckIn(t, workout.id, effortValue);
+      const unlockedNow = await onCheckIn(t, workout.id, effortValue);
       setFinalizeOpen(false);
+      if (unlockedNow.length > 0) {
+        setPendingUnlocks(unlockedNow);
+        setUnlockTotalCount(unlockedNow.length);
+        setUnlockModalVisible(true);
+      }
     } finally {
       setFinalizing(false);
     }
+  };
+
+  const handleUnlockAchievement = () => {
+    if (pendingUnlocks.length <= 1) {
+      setPendingUnlocks([]);
+      setUnlockTotalCount(0);
+      setUnlockModalVisible(false);
+      return;
+    }
+    setPendingUnlocks((current) => current.slice(1));
   };
 
   const workoutName = workout.muscleGroup ?? workout.templateName ?? t("plans.defaultName");
@@ -519,6 +563,53 @@ function WorkoutSessionCard({
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={unlockModalVisible && Boolean(activeUnlock)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setPendingUnlocks([]);
+          setUnlockTotalCount(0);
+          setUnlockModalVisible(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <Animated.View
+            style={[
+              styles.unlockCard,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.primaryShadow,
+                opacity: unlockOpacity,
+                transform: [{ scale: unlockScale }]
+              }
+            ]}
+          >
+            <View style={[styles.unlockIconWrap, { backgroundColor: colors.primarySoft, borderColor: colors.primaryShadow }]}>
+              <MaterialCommunityIcons
+                name={activeUnlock ? getAchievementUnlockIcon(activeUnlock.code) : "trophy-award"}
+                size={32}
+                color={colors.primary}
+              />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text, fontFamily: typography.heading }]}>{t("workout.unlockModalTitle")}</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textMuted, fontFamily: typography.body }]}>{activeUnlock?.title}</Text>
+            <Text style={[styles.unlockDetail, { color: colors.textMuted, fontFamily: typography.body }]}>{activeUnlock?.detail}</Text>
+            <Text style={[styles.unlockProgress, { color: colors.primary, fontFamily: typography.body }]}>
+              {t("workout.unlockProgress", {
+                current: Math.max(1, unlockTotalCount - pendingUnlocks.length + 1),
+                total: Math.max(1, unlockTotalCount)
+              })}
+            </Text>
+            <Pressable onPress={handleUnlockAchievement} style={styles.unlockActionButton}>
+              <MaterialCommunityIcons name="lock-open-variant-outline" size={18} color="#FFFFFF" />
+              <Text style={[styles.unlockActionText, { fontFamily: typography.title }]}>{t("workout.unlockAction")}</Text>
+            </Pressable>
+            <Text style={[styles.unlockHint, { color: colors.textMuted, fontFamily: typography.body }]}>{t("workout.unlockModalHint")}</Text>
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -556,7 +647,7 @@ function ExerciseExecutionCard({
   const totalSets = setLogs.length;
   const headerBg = isDark ? "#1A2740" : "#1F2A44";
   const hasReps = isNumericEntry(currentReps);
-  const hasWeight = isNumericEntry(currentWeight);
+  const hasWeight = isNumericEntry(currentWeight, true);
   const canConfirmSeries = Boolean(activeSet) && !saving && hasReps && hasWeight;
 
   const handleConfirmSet = async () => {
@@ -564,9 +655,9 @@ function ExerciseExecutionCard({
       return;
     }
 
-    const repsValue = normalizeFieldValue(currentReps, activeSet.targetReps, MAX_REPS);
+    const repsValue = normalizeIntegerFieldValue(currentReps, activeSet.targetReps, MAX_REPS);
     const fallbackWeight = exercise.weightKg || exercise.plannedWeightKg || 0;
-    const weightValue = normalizeFieldValue(currentWeight, fallbackWeight, MAX_WEIGHT);
+    const weightValue = normalizeWeightFieldValue(currentWeight, fallbackWeight, MAX_WEIGHT);
 
     const nextLogs = setLogs.map((item, index) =>
       index === activeSetIndex
@@ -629,7 +720,7 @@ function ExerciseExecutionCard({
           <View style={styles.inputBlock}>
             <Text style={[styles.inputLabel, { color: colors.text, fontFamily: typography.body }]}>{t("workout.weightLabel")}</Text>
             <Input
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
               value={currentWeight}
               onChangeText={setCurrentWeight}
               placeholder={t("workout.weightPlaceholder", { value: exercise.plannedWeightKg || 0 })}
@@ -689,23 +780,71 @@ function findFirstIncomplete(setLogs: ExerciseSetLog[]) {
   return index >= 0 ? index : Math.max(0, setLogs.length - 1);
 }
 
-function normalizeFieldValue(raw: string, fallback: number, max: number) {
+function normalizeIntegerFieldValue(raw: string, fallback: number, max: number) {
   if (raw.trim() === "") {
     return Math.max(0, Math.min(max, Math.round(fallback)));
   }
-  const parsed = Number(raw);
+  const parsed = Number(raw.trim());
   if (!Number.isFinite(parsed)) {
     return Math.max(0, Math.min(max, Math.round(fallback)));
   }
   return Math.max(0, Math.min(max, Math.round(parsed)));
 }
 
-function isNumericEntry(value: string) {
+function normalizeWeightFieldValue(raw: string, fallback: number, max: number) {
+  const parsed = parseLocaleNumber(raw);
+  if (parsed == null) {
+    return Math.max(0, Math.min(max, Math.round(fallback * 100) / 100));
+  }
+  return Math.max(0, Math.min(max, Math.round(parsed * 100) / 100));
+}
+
+function isNumericEntry(value: string, allowDecimal = false) {
   if (value.trim() === "") {
     return false;
   }
-  const parsed = Number(value);
+  const parsed = allowDecimal ? parseLocaleNumber(value) : Number(value.trim());
+  if (parsed == null) {
+    return false;
+  }
   return Number.isFinite(parsed) && parsed >= 0;
+}
+
+function parseLocaleNumber(value: string) {
+  const normalized = value.trim().replace(",", ".");
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function getAchievementUnlockIcon(code: Achievement["code"]) {
+  if (code === "first_checkin") {
+    return "star-four-points";
+  }
+  if (code === "streak_3" || code === "streak_7") {
+    return "fire";
+  }
+  if (code === "streak_14") {
+    return "lightning-bolt";
+  }
+  if (code === "streak_30") {
+    return "crown-outline";
+  }
+  if (code === "workout_10") {
+    return "medal-outline";
+  }
+  if (code === "workout_25") {
+    return "weight-lifter";
+  }
+  if (code === "workout_50") {
+    return "trophy-variant-outline";
+  }
+  return "trophy-award";
 }
 
 const styles = StyleSheet.create({
@@ -1076,10 +1215,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10
   },
+  unlockCard: {
+    borderWidth: 2,
+    borderRadius: 30,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    alignItems: "center",
+    gap: 10
+  },
   modalIconWrap: {
     width: 82,
     height: 82,
     borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2
+  },
+  unlockIconWrap: {
+    width: 90,
+    height: 90,
+    borderRadius: 26,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2
@@ -1102,6 +1257,38 @@ const styles = StyleSheet.create({
   modalOutOf: {
     fontSize: 36,
     fontWeight: "800"
+  },
+  unlockDetail: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 22,
+    maxWidth: 280
+  },
+  unlockProgress: {
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  unlockActionButton: {
+    width: "100%",
+    marginTop: 4,
+    borderRadius: 14,
+    backgroundColor: "#FF2D2D",
+    paddingVertical: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#C71827"
+  },
+  unlockActionText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800"
+  },
+  unlockHint: {
+    fontSize: 12,
+    textAlign: "center"
   },
   modalActions: {
     flexDirection: "row",

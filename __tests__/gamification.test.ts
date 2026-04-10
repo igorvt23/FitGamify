@@ -37,4 +37,17 @@ describe("resolveNewAchievements", () => {
     });
     expect(result.some((entry) => entry.code === "workout_10")).toBe(false);
   });
+
+  it("unlocks expanded milestones", () => {
+    const result = resolveNewAchievements({
+      completedSessions: buildCompletedSessions(50),
+      currentStreak: 30,
+      unlockedCodes: new Set(),
+      t
+    });
+    expect(result.some((entry) => entry.code === "streak_14")).toBe(true);
+    expect(result.some((entry) => entry.code === "streak_30")).toBe(true);
+    expect(result.some((entry) => entry.code === "workout_25")).toBe(true);
+    expect(result.some((entry) => entry.code === "workout_50")).toBe(true);
+  });
 });

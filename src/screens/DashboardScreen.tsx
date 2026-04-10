@@ -32,6 +32,7 @@ export function DashboardScreen() {
   const insets = useSafeAreaInsets();
 
   const recordedSessions = useMemo(() => sessions.filter(hasRecordedData), [sessions]);
+  const completedWorkoutsCount = useMemo(() => sessions.filter((item) => Boolean(item.checkedInAtIso)).length, [sessions]);
   const calendarBaseDate = useMemo(() => new Date(), []);
   const month = useMemo(() => buildMonthGrid(calendarBaseDate, recordedSessions), [calendarBaseDate, recordedSessions]);
   const [selectedDateIso, setSelectedDateIso] = useState(localDateIso(new Date()));
@@ -82,16 +83,16 @@ export function DashboardScreen() {
     return { currentAvg, previousAvg, delta };
   }, [recordedSessions]);
 
-  const offensiveDaysInYear = useMemo(() => Math.max(0, profile?.currentStreak ?? 0), [profile?.currentStreak]);
+  const mascotProgress = useMemo(() => Math.max(0, completedWorkoutsCount), [completedWorkoutsCount]);
 
-  const offensiveLevel = useMemo(() => getOffensiveLevelByDays(offensiveDaysInYear), [offensiveDaysInYear]);
+  const offensiveLevel = useMemo(() => getOffensiveLevelByDays(mascotProgress), [mascotProgress]);
   const offensiveTitle = useMemo(
     () => getOffensiveLevelTitle(offensiveLevel, language),
     [language, offensiveLevel]
   );
   const offensiveDaysToNext = useMemo(
-    () => getOffensiveDaysToNextLevel(offensiveDaysInYear),
-    [offensiveDaysInYear]
+    () => getOffensiveDaysToNextLevel(mascotProgress),
+    [mascotProgress]
   );
   const offensiveImageHref = useMemo(
     () => getOffensiveLevelImageHrefByGoal(offensiveLevel.level, profile?.goal),
@@ -134,7 +135,7 @@ export function DashboardScreen() {
               <MaterialCommunityIcons name="fire" size={18} color="#FFFFFF" />
             </View>
             <View style={styles.kpiSmallTextBlock}>
-              <Text style={[styles.kpiValueSmall, { color: "#FFFFFF", fontFamily: typography.heading }]}>{offensiveDaysInYear}</Text>
+              <Text style={[styles.kpiValueSmall, { color: "#FFFFFF", fontFamily: typography.heading }]}>{mascotProgress}</Text>
               <Text style={[styles.offensiveDaysLabel, { color: "#FFECEC" }]}>{t("dashboard.offensiveDaysYear")}</Text>
             </View>
           </Card>

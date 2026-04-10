@@ -2,6 +2,7 @@ import React from "react";
 import { View } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { WorkoutScreen } from "../screens/WorkoutScreen";
 import { DashboardScreen } from "../screens/DashboardScreen";
@@ -22,6 +23,8 @@ const Tab = createBottomTabNavigator<TabParamList>();
 
 export function AppTabs() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const tabBarBottomOffset = Math.max(insets.bottom, 16);
 
   const iconWrap = (name: React.ComponentProps<typeof MaterialCommunityIcons>["name"]) =>
     ({ size, focused }: { size: number; focused: boolean }) => (
@@ -59,7 +62,7 @@ export function AppTabs() {
           paddingTop: 8,
           borderRadius: 24,
           marginHorizontal: 10,
-          marginBottom: 10,
+          bottom: tabBarBottomOffset,
           position: "absolute",
           shadowColor: "#000000",
           shadowOpacity: 0.2,

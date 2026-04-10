@@ -14,15 +14,21 @@ export type OffensiveLevel = {
 export const OFFENSIVE_LEVEL_IMAGE_HREFS_BY_GOAL: Record<FitnessGoal, Record<number, string>> = {
   lose: {
     1: "../img/fat/level_01.png",
-    2: "../img/fat/level_02.png"
+    2: "../img/fat/level_02.png",
+    3: "../img/fat/level_03.png",
+    4: "../img/fat/level_04.png"
   },
   gain: {
     1: "../img/skinny/level_01.png",
-    2: "../img/skinny/level_02.png"
+    2: "../img/skinny/level_02.png",
+    3: "../img/skinny/level_03.png",
+    4: "../img/skinny/level_04.png"
   },
   maintain: {
     1: "../img/in_shape/level_01.png",
-    2: "../img/in_shape/level_02.png"
+    2: "../img/in_shape/level_02.png",
+    3: "../img/in_shape/level_03.png",
+    4: "../img/in_shape/level_04.png"
   }
 };
 
@@ -151,7 +157,7 @@ export const OFFENSIVE_LEVELS: OffensiveLevel[] = LEVEL_TITLES_PT.map((ptTitle, 
   return {
     level,
     phase: getPhaseByLevel(level),
-    requiredOffensiveDays: level * 10,
+    requiredOffensiveDays: level * 7,
     imageHrefByGoal: {
       lose: getOffensiveLevelImageHrefByGoal(level, "lose"),
       gain: getOffensiveLevelImageHrefByGoal(level, "gain"),
@@ -167,7 +173,7 @@ export const OFFENSIVE_LEVELS: OffensiveLevel[] = LEVEL_TITLES_PT.map((ptTitle, 
 
 export function getOffensiveLevelByDays(offensiveDays: number) {
   const normalizedDays = Math.max(0, Math.floor(offensiveDays));
-  const levelNumber = Math.max(1, Math.min(OFFENSIVE_LEVELS.length, Math.floor(normalizedDays / 10) + 1));
+  const levelNumber = Math.max(1, Math.min(OFFENSIVE_LEVELS.length, Math.floor(normalizedDays / 7) + 1));
   return OFFENSIVE_LEVELS[levelNumber - 1];
 }
 
@@ -202,7 +208,7 @@ export function getOffensiveDaysToNextLevel(offensiveDays: number) {
   if (current.level >= OFFENSIVE_LEVELS.length) {
     return 0;
   }
-  return Math.max(0, current.requiredOffensiveDays + 10 - Math.max(0, Math.floor(offensiveDays)));
+  return Math.max(0, current.requiredOffensiveDays + 7 - Math.max(0, Math.floor(offensiveDays)));
 }
 
 function getPhaseByLevel(level: number): OffensiveLevel["phase"] {

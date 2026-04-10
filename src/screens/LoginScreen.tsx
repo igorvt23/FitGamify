@@ -60,7 +60,7 @@ export function LoginScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.heroBlock}>
-        <View style={[styles.logoWrap, { backgroundColor: palette.logoBg }]}>
+        <View style={styles.logoWrap}>
           <Image source={APP_LOGO} style={styles.logo} resizeMode="contain" />
         </View>
 
@@ -122,7 +122,6 @@ export function LoginScreen() {
 
 const lightPalette = {
   screen: "#E5E7EB",
-  logoBg: "#F3F4F6",
   title: "#142E57",
   subtitle: "#4E678C",
   cardBg: "#F3F4F6",
@@ -141,7 +140,6 @@ const lightPalette = {
 
 const darkPalette = {
   screen: "#0F172A",
-  logoBg: "#111827",
   title: "#F8FAFC",
   subtitle: "#AAB8CE",
   cardBg: "#1E293B",

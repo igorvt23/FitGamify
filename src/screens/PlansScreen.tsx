@@ -12,7 +12,6 @@ import { Badge } from "../components/ui/Badge";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { TEMPLATE_REFRESH_INTERVAL_MONTHS, getTemplatesNeedingRefresh } from "../core/templateRefresh";
 import { TemplateExercise } from "../types";
-import { simulateTemplateRefreshReminderNow, simulateWorkoutReminderNow } from "../services/notifications";
 
 export function PlansScreen() {
   const { t } = useI18n();
@@ -22,8 +21,7 @@ export function PlansScreen() {
     saveTemplate,
     fetchTemplateExercises,
     setTemplateActiveById,
-    setTemplateExerciseActiveById,
-    language
+    setTemplateExerciseActiveById
   } = useAppContext();
   const { colors, typography } = useTheme();
   const insets = useSafeAreaInsets();
@@ -171,24 +169,6 @@ export function PlansScreen() {
     setMessage(isActive ? t("plans.exerciseActivated") : t("plans.exerciseDeactivated"));
   };
 
-  const handleSimulateWorkoutReminder = async () => {
-    try {
-      await simulateWorkoutReminderNow(language);
-      setMessage(t("plans.simulationSent"));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("settings.authError"));
-    }
-  };
-
-  const handleSimulateTemplateRefreshReminder = async () => {
-    try {
-      await simulateTemplateRefreshReminderNow(language, Math.max(1, templatesNeedingRefresh.length));
-      setMessage(t("plans.simulationSent"));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("settings.authError"));
-    }
-  };
-
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
@@ -210,30 +190,8 @@ export function PlansScreen() {
           <Text style={{ color: colors.textMuted, fontFamily: typography.body }}>
             {t(refreshMessageKey, { count: templatesNeedingRefresh.length, months: TEMPLATE_REFRESH_INTERVAL_MONTHS })}
           </Text>
-          <Button
-            label={t("plans.simulateTemplateRefreshReminder")}
-            size="sm"
-            variant="outline"
-            onPress={() => void handleSimulateTemplateRefreshReminder()}
-          />
         </Card>
       ) : null}
-
-      <Card>
-        <View style={styles.row}>
-          <MaterialCommunityIcons name="bell-ring-outline" size={18} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("plans.reminderSimulationTitle")}</Text>
-        </View>
-        <View style={styles.row}>
-          <Button label={t("plans.simulateWorkoutReminder")} size="sm" onPress={() => void handleSimulateWorkoutReminder()} />
-          <Button
-            label={t("plans.simulateTemplateRefreshReminder")}
-            size="sm"
-            variant="outline"
-            onPress={() => void handleSimulateTemplateRefreshReminder()}
-          />
-        </View>
-      </Card>
 
       <Card style={[styles.newPlanCard, { borderColor: colors.primarySoft }]}>
         <View style={styles.rowBetween}>
@@ -258,7 +216,7 @@ export function PlansScreen() {
               placeholder={t("plans.defaultWeightKg")}
               value={defaultWeightKg}
               onChangeText={setDefaultWeightKg}
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
               style={styles.smallInput}
             />
           </View>
@@ -317,12 +275,22 @@ export function PlansScreen() {
             </Pressable>
 
             <View style={styles.templateActionsRow}>
-              <Button
-                label={item.isActive ? t("plans.deactivateTemplate") : t("plans.activateTemplate")}
-                size="sm"
-                variant={item.isActive ? "outline" : "secondary"}
-                onPress={() => void handleToggleTemplateActive(item.id, !item.isActive)}
-              />
+              {item.isActive ? (
+                <Pressable
+                  onPress={() => void handleToggleTemplateActive(item.id, false)}
+                  style={[styles.iconDangerButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                  hitSlop={8}
+                >
+                  <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+                </Pressable>
+              ) : (
+                <Button
+                  label={t("plans.activateTemplate")}
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => void handleToggleTemplateActive(item.id, true)}
+                />
+              )}
             </View>
 
             {expandedTemplateId === item.id ? (
@@ -345,12 +313,22 @@ export function PlansScreen() {
                           label={exercise.isActive ? t("plans.activeState") : t("plans.inactiveState")}
                           variant={exercise.isActive ? "success" : "warning"}
                         />
-                        <Button
-                          label={exercise.isActive ? t("plans.deactivateExercise") : t("plans.activateExercise")}
-                          size="sm"
-                          variant="outline"
-                          onPress={() => void handleToggleExerciseActive(item.id, exercise.id, !exercise.isActive)}
-                        />
+                        {exercise.isActive ? (
+                          <Pressable
+                            onPress={() => void handleToggleExerciseActive(item.id, exercise.id, false)}
+                            style={[styles.iconDangerButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                            hitSlop={8}
+                          >
+                            <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+                          </Pressable>
+                        ) : (
+                          <Button
+                            label={t("plans.activateExercise")}
+                            size="sm"
+                            variant="outline"
+                            onPress={() => void handleToggleExerciseActive(item.id, exercise.id, true)}
+                          />
+                        )}
                       </View>
                     </View>
                   ))
@@ -389,11 +367,12 @@ function normalizeRepScheme(value: string) {
 }
 
 function normalizeWeight(value: string) {
-  const parsed = Number(value);
-  if (Number.isNaN(parsed) || parsed < 0) {
+  const normalized = value.trim().replace(",", ".");
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) {
     return 0;
   }
-  return parsed;
+  return Math.round(parsed * 100) / 100;
 }
 
 const styles = StyleSheet.create({
@@ -479,6 +458,14 @@ const styles = StyleSheet.create({
   templateActionsRow: {
     flexDirection: "row",
     justifyContent: "flex-end"
+  },
+  iconDangerButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center"
   },
   templateExercisesBlock: {
     borderTopWidth: 1,

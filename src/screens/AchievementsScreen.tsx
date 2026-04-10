@@ -13,7 +13,11 @@ const ACHIEVEMENTS = [
   { code: "first_checkin", i18nKey: "first", icon: "star-four-points", accent: "warning" as const },
   { code: "streak_3", i18nKey: "streak3", icon: "fire", accent: "primary" as const },
   { code: "streak_7", i18nKey: "streak7", icon: "fire-alert", accent: "primary" as const },
-  { code: "workout_10", i18nKey: "workout10", icon: "medal-outline", accent: "purple" as const }
+  { code: "streak_14", i18nKey: "streak14", icon: "lightning-bolt", accent: "primary" as const },
+  { code: "streak_30", i18nKey: "streak30", icon: "crown-outline", accent: "warning" as const },
+  { code: "workout_10", i18nKey: "workout10", icon: "medal-outline", accent: "purple" as const },
+  { code: "workout_25", i18nKey: "workout25", icon: "weight-lifter", accent: "purple" as const },
+  { code: "workout_50", i18nKey: "workout50", icon: "trophy-variant-outline", accent: "warning" as const }
 ] as const;
 
 export function AchievementsScreen() {

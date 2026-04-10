@@ -70,7 +70,15 @@ export type WorkoutSession = {
   notes: string | null;
 };
 
-export type AchievementCode = "first_checkin" | "streak_3" | "streak_7" | "workout_10";
+export type AchievementCode =
+  | "first_checkin"
+  | "streak_3"
+  | "streak_7"
+  | "streak_14"
+  | "streak_30"
+  | "workout_10"
+  | "workout_25"
+  | "workout_50";
 
 export type Achievement = {
   id: string;

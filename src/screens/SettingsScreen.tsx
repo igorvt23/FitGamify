@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -12,10 +12,24 @@ import { useTheme } from "../theme/useTheme";
 import { Card } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
-import { Chip } from "../components/ui/Chip";
-import { FitnessGoal, Weekday } from "../types";
+import { AppLanguage, AppTheme, FitnessGoal, Weekday } from "../types";
 
 type SettingsNav = StackNavigationProp<RootStackParamList, "MainTabs">;
+
+type SelectOption = {
+  label: string;
+  value: string;
+  icon?: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+};
+
+type SelectSheetState = {
+  title: string;
+  options: SelectOption[];
+  selectedValue: string;
+  onSelect: (value: string) => void;
+} | null;
+
+type ReminderFrequencyPreset = "weekdays" | "everyday" | "weekends" | "custom";
 
 export function SettingsScreen() {
   const navigation = useNavigation<SettingsNav>();
@@ -49,6 +63,7 @@ export function SettingsScreen() {
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderTime, setReminderTime] = useState("20:00");
   const [reminderWeekdays, setReminderWeekdays] = useState<Weekday[]>([1, 2, 3, 4, 5]);
+  const [selectSheet, setSelectSheet] = useState<SelectSheetState>(null);
 
   useEffect(() => {
     if (!profile) {
@@ -67,10 +82,99 @@ export function SettingsScreen() {
     setReminderWeekdays(workoutReminderSettings.weekdays);
   }, [workoutReminderSettings]);
 
-  const weekLabels = useMemo(() => {
-    const translated = t("dashboard.weekdays") as unknown;
-    return Array.isArray(translated) && translated.length === 7 ? translated : ["D", "S", "T", "Q", "Q", "S", "S"];
-  }, [t]);
+  const goalOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: "lose", label: t("settings.goalLose"), icon: "trending-down" },
+      { value: "gain", label: t("settings.goalGain"), icon: "trending-up" },
+      { value: "maintain", label: t("settings.goalMaintain"), icon: "equal-box" }
+    ],
+    [t]
+  );
+
+  const themeOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: "light", label: t("settings.theme.light"), icon: "weather-sunny" },
+      { value: "dark", label: t("settings.theme.dark"), icon: "weather-night" },
+      { value: "system", label: t("settings.theme.system"), icon: "cellphone-cog" }
+    ],
+    [t]
+  );
+
+  const languageOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: "pt-BR", label: t("settings.languagePtBr"), icon: "flag" },
+      { value: "en", label: t("settings.languageEn"), icon: "flag-outline" },
+      { value: "es", label: t("settings.languageEs"), icon: "flag-variant-outline" }
+    ],
+    [t]
+  );
+
+  const reminderFrequencyOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: "weekdays", label: t("settings.frequencyWeekdays"), icon: "calendar-week" },
+      { value: "everyday", label: t("settings.frequencyEveryday"), icon: "calendar-month" },
+      { value: "weekends", label: t("settings.frequencyWeekends"), icon: "calendar-weekend" }
+    ],
+    [t]
+  );
+
+  const reminderFrequencyPreset = useMemo(
+    () => resolveReminderFrequencyPreset(reminderWeekdays),
+    [reminderWeekdays]
+  );
+
+  const reminderFrequencyLabel = useMemo(() => {
+    if (reminderFrequencyPreset === "weekdays") {
+      return t("settings.frequencyWeekdays");
+    }
+    if (reminderFrequencyPreset === "everyday") {
+      return t("settings.frequencyEveryday");
+    }
+    if (reminderFrequencyPreset === "weekends") {
+      return t("settings.frequencyWeekends");
+    }
+    return t("settings.frequencyCustom");
+  }, [reminderFrequencyPreset, t]);
+
+  const timeOptions = useMemo<SelectOption[]>(() => buildTimeOptions(), []);
+
+  const goalLabel = useMemo(() => {
+    if (goal === "lose") {
+      return t("settings.goalLose");
+    }
+    if (goal === "gain") {
+      return t("settings.goalGain");
+    }
+    return t("settings.goalMaintain");
+  }, [goal, t]);
+
+  const themeLabel = useMemo(() => {
+    if (theme === "light") {
+      return t("settings.theme.light");
+    }
+    if (theme === "dark") {
+      return t("settings.theme.dark");
+    }
+    return t("settings.theme.system");
+  }, [theme, t]);
+
+  const languageLabel = useMemo(() => {
+    if (language === "pt-BR") {
+      return t("settings.languagePtBr");
+    }
+    if (language === "en") {
+      return t("settings.languageEn");
+    }
+    return t("settings.languageEs");
+  }, [language, t]);
+
+  const openSelectSheet = (state: Exclude<SelectSheetState, null>) => {
+    setSelectSheet(state);
+  };
+
+  const closeSelectSheet = () => {
+    setSelectSheet(null);
+  };
 
   const handleSignIn = async () => {
     try {
@@ -100,9 +204,9 @@ export function SettingsScreen() {
   };
 
   const handleSaveProfile = async () => {
-    const parsedAge = age.trim() === "" ? null : Number(age);
-    const parsedHeight = heightCm.trim() === "" ? null : Number(heightCm);
-    const parsedWeight = weightKg.trim() === "" ? null : Number(weightKg);
+    const parsedAge = age.trim() === "" ? null : Number(age.trim());
+    const parsedHeight = parseLocaleNumber(heightCm);
+    const parsedWeight = parseLocaleNumber(weightKg);
 
     await updateProfile({
       displayName: displayName.trim() || profile?.displayName || "Atleta",
@@ -133,31 +237,32 @@ export function SettingsScreen() {
     }
   };
 
-  const toggleReminderWeekday = (weekday: Weekday) => {
-    setReminderWeekdays((current) => {
-      if (current.includes(weekday)) {
-        return current.filter((item) => item !== weekday);
-      }
-      return [...current, weekday].sort((a, b) => a - b);
-    });
-  };
+  const persistReminderSettings = async (params: {
+    enabled?: boolean;
+    time?: string;
+    weekdays?: Weekday[];
+  }) => {
+    const nextEnabled = params.enabled ?? reminderEnabled;
+    const nextTime = params.time ?? reminderTime;
+    const nextWeekdays = normalizeWeekdays(params.weekdays ?? reminderWeekdays);
+    const parsed = parseReminderTime(nextTime);
 
-  const handleSaveReminder = async () => {
-    const parsed = parseReminderTime(reminderTime);
     if (!parsed) {
       setMessage(t("settings.reminderInvalidTime"));
       return;
     }
-    if (reminderEnabled && reminderWeekdays.length === 0) {
+
+    if (nextEnabled && nextWeekdays.length === 0) {
       setMessage(t("settings.reminderSelectDay"));
       return;
     }
+
     try {
       await updateWorkoutReminderSettings({
-        enabled: reminderEnabled,
+        enabled: nextEnabled,
         hour: parsed.hour,
         minute: parsed.minute,
-        weekdays: [...new Set(reminderWeekdays)].sort((a, b) => a - b) as Weekday[]
+        weekdays: nextWeekdays
       });
       setMessage(t("settings.reminderSaved"));
     } catch (error) {
@@ -165,161 +270,387 @@ export function SettingsScreen() {
     }
   };
 
-  return (
-    <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={[styles.container, { paddingTop: Math.max(insets.top + 8, 18) }]}
-    >
-      <Text style={[styles.title, { color: colors.text, fontFamily: typography.heading }]}>{t("settings.title")}</Text>
+  const handleToggleReminder = (enabled: boolean) => {
+    setReminderEnabled(enabled);
+    void persistReminderSettings({ enabled });
+  };
 
-      <Card style={styles.accountCard}>
-        <View style={styles.rowBetween}>
-          <View style={styles.row}>
-            <View style={[styles.avatar, { backgroundColor: colors.surfaceAlt }]}>
-              <Text style={{ color: colors.primary, fontFamily: typography.heading }}>
-                {(displayName || "A").slice(0, 1).toUpperCase()}
-              </Text>
+  const handleSelectReminderTime = (value: string) => {
+    setReminderTime(value);
+    void persistReminderSettings({ time: value });
+  };
+
+  const handleSelectReminderFrequency = (value: string) => {
+    if (value !== "weekdays" && value !== "everyday" && value !== "weekends") {
+      return;
+    }
+    const weekdays = weekdaysFromPreset(value);
+    setReminderWeekdays(weekdays);
+    void persistReminderSettings({ weekdays });
+  };
+
+  const inputStyle = {
+    borderColor: colors.border,
+    backgroundColor: colors.inputBg,
+    color: colors.text,
+    fontFamily: typography.body
+  } as const;
+
+  return (
+    <>
+      <ScrollView
+        style={{ backgroundColor: colors.background }}
+        contentContainerStyle={[styles.container, { paddingTop: Math.max(insets.top + 8, 18) }]}
+      >
+        <Text style={[styles.title, { color: colors.text, fontFamily: typography.heading }]}>{t("settings.title")}</Text>
+
+        <Card style={styles.accountCard}>
+          <View style={styles.rowBetween}>
+            <View style={styles.row}>
+              <View style={[styles.avatar, { backgroundColor: colors.primarySoft, borderColor: colors.primaryShadow }]}>
+                <MaterialCommunityIcons name="account-outline" size={28} color={colors.primary} />
+              </View>
+              <View style={styles.accountTextWrap}>
+                <Text style={[styles.accountName, { color: colors.text, fontFamily: typography.title }]}>
+                  {displayName || t("settings.defaultName")}
+                </Text>
+                <Text style={{ color: colors.textMuted, fontFamily: typography.body }}>
+                  {authUser?.email ?? t("settings.notLogged")}
+                </Text>
+              </View>
             </View>
-            <View>
-              <Text style={[styles.accountName, { color: colors.text, fontFamily: typography.title }]}>{displayName || t("settings.defaultName")}</Text>
-              <Text style={{ color: colors.textMuted }}>{authUser?.email ?? t("settings.notLogged")}</Text>
+
+            {authUser ? (
+              <Pressable
+                onPress={() => void handleSignOut()}
+                style={[styles.logoutButton, { borderColor: colors.border, backgroundColor: colors.inputBg }]}
+              >
+                <MaterialCommunityIcons name="logout-variant" size={18} color={colors.textMuted} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {!authUser ? (
+            <View style={[styles.loginBlock, { borderTopColor: colors.border }]}>
+              <Text style={[styles.fieldLabel, { color: colors.text, fontFamily: typography.title }]}>{t("settings.email")}</Text>
+              <Input
+                placeholder={t("settings.email")}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                style={[styles.inputField, inputStyle]}
+              />
+              <Text style={[styles.fieldLabel, { color: colors.text, fontFamily: typography.title }]}>{t("settings.password")}</Text>
+              <Input
+                placeholder={t("settings.password")}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                style={[styles.inputField, inputStyle]}
+              />
+              <View style={styles.row}>
+                <Button
+                  label={t("settings.signin")}
+                  onPress={() => void handleSignIn()}
+                  style={styles.flex}
+                  leftIcon={<MaterialCommunityIcons name="login" size={16} color="#FFFFFF" />}
+                />
+                <Button
+                  label={t("settings.createAccount")}
+                  variant="outline"
+                  onPress={() => navigation.navigate("SignUp")}
+                  style={styles.flex}
+                />
+              </View>
+            </View>
+          ) : null}
+        </Card>
+
+        <Card style={styles.sectionCard}>
+          <SectionHeader
+            icon="account-circle-outline"
+            label={t("settings.personalData")}
+            colors={{ text: colors.textMuted, icon: colors.textMuted }}
+            typography={typography}
+          />
+
+          <Text style={[styles.fieldLabel, { color: colors.text, fontFamily: typography.title }]}>{t("settings.displayName")}</Text>
+          <Input
+            value={displayName}
+            onChangeText={setDisplayName}
+            placeholder={t("settings.displayName")}
+            style={[styles.inputField, inputStyle]}
+          />
+
+          <View style={styles.metricRow}>
+            <View style={styles.metricCol}>
+              <Text style={[styles.fieldLabel, { color: colors.text, fontFamily: typography.title }]}>{t("signup.age")}</Text>
+              <Input value={age} onChangeText={setAge} keyboardType="numeric" placeholder={t("signup.age")} style={[styles.inputField, inputStyle]} />
+            </View>
+            <View style={styles.metricCol}>
+              <Text style={[styles.fieldLabel, { color: colors.text, fontFamily: typography.title }]}>{t("signup.heightCm")}</Text>
+              <Input
+                value={heightCm}
+                onChangeText={setHeightCm}
+                keyboardType="numeric"
+                placeholder={t("signup.heightCm")}
+                style={[styles.inputField, inputStyle]}
+              />
+            </View>
+            <View style={styles.metricCol}>
+              <Text style={[styles.fieldLabel, { color: colors.text, fontFamily: typography.title }]}>{t("signup.weightKg")}</Text>
+              <Input
+                value={weightKg}
+                onChangeText={setWeightKg}
+                keyboardType="decimal-pad"
+                placeholder={t("signup.weightKg")}
+                style={[styles.inputField, inputStyle]}
+              />
             </View>
           </View>
-          {authUser ? (
-            <Button label={t("settings.logout")} variant="danger" size="sm" onPress={() => void handleSignOut()} />
+
+          <SelectField
+            label={t("settings.mainGoal")}
+            value={goalLabel}
+            onPress={() =>
+              openSelectSheet({
+                title: t("settings.mainGoal"),
+                options: goalOptions,
+                selectedValue: goal ?? "maintain",
+                onSelect: (value) => {
+                  void handleGoalSelect(value as FitnessGoal);
+                }
+              })
+            }
+            colors={{ text: colors.text, textMuted: colors.textMuted, border: colors.border, inputBg: colors.inputBg }}
+            typography={typography}
+          />
+
+          <Button
+            label={t("settings.saveProfile")}
+            onPress={() => void handleSaveProfile()}
+            style={styles.saveProfileButton}
+            leftIcon={<MaterialCommunityIcons name="content-save-outline" size={16} color="#FFFFFF" />}
+          />
+        </Card>
+
+        <Card style={styles.sectionCard}>
+          <SectionHeader
+            icon="tune-variant"
+            label={t("settings.preferences")}
+            colors={{ text: colors.textMuted, icon: colors.textMuted }}
+            typography={typography}
+          />
+
+          <View style={styles.preferenceRow}>
+            <SelectField
+              label={t("settings.appTheme")}
+              value={themeLabel}
+              onPress={() =>
+                openSelectSheet({
+                  title: t("settings.appTheme"),
+                  options: themeOptions,
+                  selectedValue: theme,
+                  onSelect: (value) => setTheme(value as AppTheme)
+                })
+              }
+              compact
+              colors={{ text: colors.text, textMuted: colors.textMuted, border: colors.border, inputBg: colors.inputBg }}
+              typography={typography}
+            />
+            <SelectField
+              label={t("settings.language")}
+              value={languageLabel}
+              onPress={() =>
+                openSelectSheet({
+                  title: t("settings.language"),
+                  options: languageOptions,
+                  selectedValue: language,
+                  onSelect: (value) => setLanguage(value as AppLanguage)
+                })
+              }
+              compact
+              colors={{ text: colors.text, textMuted: colors.textMuted, border: colors.border, inputBg: colors.inputBg }}
+              typography={typography}
+            />
+          </View>
+
+          <View style={[styles.reminderCard, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+            <View style={styles.rowBetween}>
+              <View style={styles.row}>
+                <MaterialCommunityIcons name="bell-outline" size={18} color={colors.primary} />
+                <Text style={[styles.reminderTitle, { color: colors.text, fontFamily: typography.title }]}>
+                  {t("settings.trainingAlerts")}
+                </Text>
+              </View>
+              <Switch
+                value={reminderEnabled}
+                onValueChange={handleToggleReminder}
+                trackColor={{ false: "#CBD5E1", true: "#22C55E" }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+
+            <View style={[styles.reminderDivider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.preferenceRow}>
+              <SelectField
+                label={t("settings.reminderTimeLabel")}
+                value={reminderTime}
+                onPress={() =>
+                  openSelectSheet({
+                    title: t("settings.reminderTimeLabel"),
+                    options: timeOptions,
+                    selectedValue: reminderTime,
+                    onSelect: handleSelectReminderTime
+                  })
+                }
+                compact
+                colors={{ text: colors.text, textMuted: colors.textMuted, border: colors.border, inputBg: colors.inputBg }}
+                typography={typography}
+              />
+              <SelectField
+                label={t("settings.reminderFrequencyLabel")}
+                value={reminderFrequencyLabel}
+                onPress={() =>
+                  openSelectSheet({
+                    title: t("settings.reminderFrequencyLabel"),
+                    options: reminderFrequencyOptions,
+                    selectedValue: reminderFrequencyPreset,
+                    onSelect: handleSelectReminderFrequency
+                  })
+                }
+                compact
+                colors={{ text: colors.text, textMuted: colors.textMuted, border: colors.border, inputBg: colors.inputBg }}
+                typography={typography}
+              />
+            </View>
+          </View>
+        </Card>
+
+        <Card style={styles.sectionCard}>
+          <SectionHeader
+            icon="cloud-outline"
+            label={t("settings.cloudSync")}
+            colors={{ text: colors.textMuted, icon: colors.textMuted }}
+            typography={typography}
+          />
+          <Text style={[styles.cloudHint, { color: colors.textMuted, fontFamily: typography.body }]}>{t("settings.cloudHint")}</Text>
+          <View style={styles.cloudActions}>
+            <Button
+              label={t("settings.backupNow")}
+              onPress={() => void handleBackup()}
+              style={styles.flex}
+              leftIcon={<MaterialCommunityIcons name="cloud-upload-outline" size={16} color="#FFFFFF" />}
+            />
+            <Button
+              label={t("settings.restoreNow")}
+              variant="outline"
+              onPress={() => void handleRestore()}
+              style={styles.flex}
+              leftIcon={<MaterialCommunityIcons name="download" size={16} color={colors.textMuted} />}
+            />
+          </View>
+        </Card>
+
+        {message ? (
+          <Card variant="muted">
+            <Text style={{ color: colors.text, fontFamily: typography.body }}>{message}</Text>
+          </Card>
+        ) : null}
+      </ScrollView>
+
+      <Modal visible={Boolean(selectSheet)} transparent animationType="fade" onRequestClose={closeSelectSheet}>
+        <View style={styles.sheetOverlay}>
+          <Pressable style={styles.sheetBackdrop} onPress={closeSelectSheet} />
+          {selectSheet ? (
+            <View style={[styles.sheetCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.sheetTitle, { color: colors.text, fontFamily: typography.title }]}>{selectSheet.title}</Text>
+              {selectSheet.options.map((item) => {
+                const selected = item.value === selectSheet.selectedValue;
+                return (
+                  <Pressable
+                    key={item.value}
+                    onPress={() => {
+                      selectSheet.onSelect(item.value);
+                      closeSelectSheet();
+                    }}
+                    style={[
+                      styles.sheetOption,
+                      {
+                        borderColor: selected ? colors.primary : colors.border,
+                        backgroundColor: selected ? colors.primarySoft : colors.inputBg
+                      }
+                    ]}
+                  >
+                    <View style={styles.row}>
+                      {item.icon ? (
+                        <MaterialCommunityIcons name={item.icon} size={16} color={selected ? colors.primary : colors.textMuted} />
+                      ) : null}
+                      <Text style={{ color: colors.text, fontFamily: typography.body }}>{item.label}</Text>
+                    </View>
+                    {selected ? <MaterialCommunityIcons name="check" size={18} color={colors.primary} /> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
           ) : null}
         </View>
-        {!authUser ? (
-          <View style={styles.loginBlock}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("settings.email")}</Text>
-            <Input
-              placeholder={t("settings.email")}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("settings.password")}</Text>
-            <Input placeholder={t("settings.password")} value={password} onChangeText={setPassword} secureTextEntry />
-            <View style={styles.row}>
-              <Button label={t("settings.signin")} onPress={() => void handleSignIn()} />
-              <Button label={t("settings.createAccount")} variant="outline" onPress={() => navigation.navigate("SignUp")} />
-            </View>
-          </View>
-        ) : null}
-      </Card>
+      </Modal>
+    </>
+  );
+}
 
-      <Card>
-        <View style={styles.sectionHeader}>
-          <MaterialCommunityIcons name="account-outline" size={18} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("settings.profileTitle")}</Text>
-        </View>
-        <Text style={{ color: colors.textMuted }}>{t("settings.profileHint")}</Text>
-        <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("settings.displayName")}</Text>
-        <Input value={displayName} onChangeText={setDisplayName} placeholder={t("settings.displayName")} />
-        <View style={styles.row}>
-          <View style={styles.col}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("signup.age")}</Text>
-            <Input value={age} onChangeText={setAge} keyboardType="numeric" placeholder={t("signup.age")} />
-          </View>
-          <View style={styles.col}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("signup.heightCm")}</Text>
-            <Input value={heightCm} onChangeText={setHeightCm} keyboardType="numeric" placeholder={t("signup.heightCm")} />
-          </View>
-        </View>
-        <View style={styles.row}>
-          <View style={styles.col}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("signup.weightKg")}</Text>
-            <Input value={weightKg} onChangeText={setWeightKg} keyboardType="numeric" placeholder={t("signup.weightKg")} />
-          </View>
-        </View>
-        <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("settings.goal")}</Text>
-        <View style={styles.row}>
-          <Chip label={t("settings.goalLose")} selected={goal === "lose"} onPress={() => void handleGoalSelect("lose")} />
-          <Chip label={t("settings.goalGain")} selected={goal === "gain"} onPress={() => void handleGoalSelect("gain")} />
-          <Chip
-            label={t("settings.goalMaintain")}
-            selected={goal === "maintain"}
-            onPress={() => void handleGoalSelect("maintain")}
-          />
-        </View>
-        <Button label={t("settings.saveProfile")} onPress={() => void handleSaveProfile()} />
-      </Card>
+function SectionHeader({
+  icon,
+  label,
+  colors,
+  typography
+}: {
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+  label: string;
+  colors: { text: string; icon: string };
+  typography: ReturnType<typeof useTheme>["typography"];
+}) {
+  return (
+    <View style={styles.sectionHeader}>
+      <MaterialCommunityIcons name={icon} size={16} color={colors.icon} />
+      <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{label.toUpperCase()}</Text>
+    </View>
+  );
+}
 
-      <Card>
-        <View style={styles.sectionHeader}>
-          <MaterialCommunityIcons name="tune-variant" size={18} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("settings.preferences")}</Text>
-        </View>
-        <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("settings.themeLabel")}</Text>
-        <View style={styles.row}>
-          <Chip label={t("settings.theme.light")} selected={theme === "light"} onPress={() => setTheme("light")} />
-          <Chip label={t("settings.theme.dark")} selected={theme === "dark"} onPress={() => setTheme("dark")} />
-          <Chip label={t("settings.theme.system")} selected={theme === "system"} onPress={() => setTheme("system")} />
-        </View>
-        <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("settings.language")}</Text>
-        <View style={styles.row}>
-          <Chip label="PT-BR" selected={language === "pt-BR"} onPress={() => setLanguage("pt-BR")} />
-          <Chip label="EN" selected={language === "en"} onPress={() => setLanguage("en")} />
-          <Chip label="ES" selected={language === "es"} onPress={() => setLanguage("es")} />
-        </View>
-      </Card>
-
-      <Card>
-        <View style={styles.sectionHeader}>
-          <MaterialCommunityIcons name="bell-ring-outline" size={18} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("settings.reminderTitle")}</Text>
-        </View>
-        <Text style={{ color: colors.textMuted }}>{t("settings.reminderHint")}</Text>
-        <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("settings.reminderTimeLabel")}</Text>
-        <Input
-          value={reminderTime}
-          onChangeText={setReminderTime}
-          placeholder={t("settings.reminderTimePlaceholder")}
-          keyboardType="numbers-and-punctuation"
-          maxLength={5}
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        <Text style={[styles.fieldLabel, { color: colors.text }]}>{t("settings.reminderDaysLabel")}</Text>
-        <View style={styles.row}>
-          {weekLabels.map((label, index) => {
-            const weekday = index as Weekday;
-            return (
-              <Chip
-                key={`${label}-${weekday}`}
-                label={label}
-                selected={reminderWeekdays.includes(weekday)}
-                onPress={() => toggleReminderWeekday(weekday)}
-              />
-            );
-          })}
-        </View>
-        <View style={styles.row}>
-          <Chip label={t("settings.reminderToggleOn")} selected={reminderEnabled} onPress={() => setReminderEnabled(true)} />
-          <Chip label={t("settings.reminderToggleOff")} selected={!reminderEnabled} onPress={() => setReminderEnabled(false)} />
-        </View>
-        <Button label={t("settings.reminderSave")} onPress={() => void handleSaveReminder()} />
-      </Card>
-
-      <Card>
-        <View style={styles.sectionHeader}>
-          <MaterialCommunityIcons name="cloud-sync-outline" size={18} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("settings.cloudSync")}</Text>
-        </View>
-        <Text style={{ color: colors.textMuted }}>{t("settings.cloudHint")}</Text>
-        <View style={styles.row}>
-          <Button label={t("settings.backupNow")} onPress={() => void handleBackup()} />
-          <Button label={t("settings.restoreNow")} variant="outline" onPress={() => void handleRestore()} />
-        </View>
-      </Card>
-
-      {message ? (
-        <Card variant="muted">
-          <Text style={{ color: colors.text }}>{message}</Text>
-        </Card>
-      ) : null}
-    </ScrollView>
+function SelectField({
+  label,
+  value,
+  onPress,
+  compact = false,
+  colors,
+  typography
+}: {
+  label: string;
+  value: string;
+  onPress: () => void;
+  compact?: boolean;
+  colors: {
+    text: string;
+    textMuted: string;
+    border: string;
+    inputBg: string;
+  };
+  typography: ReturnType<typeof useTheme>["typography"];
+}) {
+  return (
+    <View style={compact ? styles.preferenceCol : undefined}>
+      <Text style={[styles.fieldLabel, { color: colors.text, fontFamily: typography.title }]}>{label}</Text>
+      <Pressable style={[styles.selectTrigger, { borderColor: colors.border, backgroundColor: colors.inputBg }]} onPress={onPress}>
+        <Text style={[styles.selectValue, { color: colors.text, fontFamily: typography.body }]} numberOfLines={1}>
+          {value}
+        </Text>
+        <MaterialCommunityIcons name="chevron-down" size={18} color={colors.textMuted} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -342,46 +673,125 @@ function formatReminderTime(hour: number, minute: number) {
   return `${hh}:${mm}`;
 }
 
+function parseLocaleNumber(value: string): number | null {
+  const normalized = value.trim().replace(",", ".");
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.round(parsed * 100) / 100;
+}
+
+function normalizeWeekdays(weekdays: Weekday[]) {
+  return [...new Set(weekdays)].sort((a, b) => a - b) as Weekday[];
+}
+
+function resolveReminderFrequencyPreset(weekdays: Weekday[]): ReminderFrequencyPreset {
+  const normalized = normalizeWeekdays(weekdays);
+  if (isSameWeekdays(normalized, [1, 2, 3, 4, 5])) {
+    return "weekdays";
+  }
+  if (isSameWeekdays(normalized, [0, 1, 2, 3, 4, 5, 6])) {
+    return "everyday";
+  }
+  if (isSameWeekdays(normalized, [0, 6])) {
+    return "weekends";
+  }
+  return "custom";
+}
+
+function weekdaysFromPreset(preset: Exclude<ReminderFrequencyPreset, "custom">): Weekday[] {
+  if (preset === "weekdays") {
+    return [1, 2, 3, 4, 5];
+  }
+  if (preset === "weekends") {
+    return [0, 6];
+  }
+  return [0, 1, 2, 3, 4, 5, 6];
+}
+
+function isSameWeekdays(a: number[], b: number[]) {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((value, index) => value === b[index]);
+}
+
+function buildTimeOptions(): SelectOption[] {
+  const options: SelectOption[] = [];
+  for (let hour = 0; hour <= 23; hour += 1) {
+    for (const minute of [0, 30]) {
+      const label = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+      options.push({
+        value: label,
+        label,
+        icon: "clock-outline"
+      });
+    }
+  }
+  return options;
+}
+
 const styles = StyleSheet.create({
   container: {
     padding: 16,
     paddingBottom: 110,
-    gap: 12
+    gap: 14
   },
   title: {
     fontSize: 24,
-    fontWeight: "700"
+    fontWeight: "800"
   },
   accountCard: {
     gap: 12
   },
+  accountTextWrap: {
+    gap: 2
+  },
   accountName: {
-    fontSize: 16,
-    fontWeight: "700"
+    fontSize: 22,
+    fontWeight: "800"
   },
   avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2
+  },
+  logoutButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center"
   },
   loginBlock: {
-    gap: 8
+    gap: 8,
+    borderTopWidth: 1,
+    paddingTop: 12
   },
-  sectionTitle: {
-    fontWeight: "700",
-    fontSize: 16
+  sectionCard: {
+    gap: 12
   },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 6
+    gap: 6
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 0.8
   },
   row: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    alignItems: "center",
     gap: 8
   },
   rowBetween: {
@@ -390,12 +800,101 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8
   },
-  col: {
+  metricRow: {
+    flexDirection: "row",
+    gap: 10
+  },
+  metricCol: {
     flex: 1,
-    minWidth: 140
+    gap: 6
   },
   fieldLabel: {
     fontSize: 13,
-    fontWeight: "700"
+    fontWeight: "800"
+  },
+  inputField: {
+    fontSize: 15,
+    minHeight: 52
+  },
+  selectTrigger: {
+    borderWidth: 1,
+    borderRadius: 14,
+    minHeight: 52,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8
+  },
+  selectValue: {
+    fontSize: 15,
+    flex: 1
+  },
+  saveProfileButton: {
+    marginTop: 6,
+    borderRadius: 16,
+    minHeight: 54
+  },
+  preferenceRow: {
+    flexDirection: "row",
+    gap: 10
+  },
+  preferenceCol: {
+    flex: 1,
+    gap: 6
+  },
+  reminderCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 12,
+    gap: 10
+  },
+  reminderTitle: {
+    fontSize: 18,
+    fontWeight: "800"
+  },
+  reminderDivider: {
+    height: 1
+  },
+  cloudHint: {
+    fontSize: 13,
+    lineHeight: 19
+  },
+  cloudActions: {
+    flexDirection: "row",
+    gap: 8
+  },
+  flex: {
+    flex: 1
+  },
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: "flex-end"
+  },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15, 23, 42, 0.42)"
+  },
+  sheetCard: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8
+  },
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 6
+  },
+  sheetOption: {
+    borderWidth: 1,
+    borderRadius: 14,
+    minHeight: 48,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8
   }
 });

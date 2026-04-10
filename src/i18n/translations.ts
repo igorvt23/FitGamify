@@ -90,7 +90,11 @@ export const translations = {
       refreshBodySingle:
         "1 treino foi cadastrado ha mais de %{months} meses. Crie um novo treino para melhorar a hipertrofia.",
       refreshBodyPlural:
-        "%{count} treinos foram cadastrados ha mais de %{months} meses. Crie novos treinos para melhorar a hipertrofia."
+        "%{count} treinos foram cadastrados ha mais de %{months} meses. Crie novos treinos para melhorar a hipertrofia.",
+      unlockModalTitle: "Nova conquista!",
+      unlockModalHint: "Toque para desbloquear e continuar evoluindo.",
+      unlockAction: "Desbloquear",
+      unlockProgress: "%{current} de %{total}"
     },
     plans: {
       title: "Planejador",
@@ -177,9 +181,9 @@ export const translations = {
       streak: "Streak atual",
       achievements: "Conquistas",
       streakLabel: "DIAS SEGUIDOS",
-      offensiveDaysYear: "Dias ofensivos",
+      offensiveDaysYear: "Treinos acumulados",
       offensiveLevel: "Nivel %{level}",
-      nextLevelIn: "Faltam %{days} dias",
+      nextLevelIn: "Faltam %{days} treinos",
       maxLevel: "Nivel maximo",
       weekdays: ["D", "S", "T", "Q", "Q", "S", "S"],
       empty: "Sem treinos concluidos ainda.",
@@ -216,9 +220,25 @@ export const translations = {
         title: "Streak de 7 dias",
         detail: "Uma semana completa sem quebrar ritmo."
       },
+      streak14: {
+        title: "Streak de 14 dias",
+        detail: "Duas semanas de treino sem quebrar a sequencia."
+      },
+      streak30: {
+        title: "Streak de 30 dias",
+        detail: "Um mes inteiro de disciplina."
+      },
       workout10: {
         title: "10 treinos",
         detail: "Voce chegou a 10 treinos concluidos."
+      },
+      workout25: {
+        title: "25 treinos",
+        detail: "Voce atingiu 25 treinos concluidos."
+      },
+      workout50: {
+        title: "50 treinos",
+        detail: "Voce bateu a marca de 50 treinos concluidos."
       }
     },
     settings: {
@@ -235,6 +255,9 @@ export const translations = {
       preferences: "Preferencias",
       saveProfile: "Salvar perfil",
       profileSaved: "Perfil atualizado.",
+      personalData: "Dados pessoais",
+      mainGoal: "Objetivo principal",
+      appTheme: "Tema do app",
       themeLabel: "Tema",
       theme: {
         light: "Claro",
@@ -242,6 +265,9 @@ export const translations = {
         system: "Sistema"
       },
       language: "Idioma",
+      languagePtBr: "Portugues (BR)",
+      languageEn: "English",
+      languageEs: "Espanol",
       login: "Login da conta",
       logout: "Sair",
       email: "Email",
@@ -260,12 +286,18 @@ export const translations = {
       backupError: "Falha ao sincronizar com nuvem.",
       restoreSuccess: "Backup restaurado com sucesso.",
       reminderTitle: "Lembretes de treino",
+      trainingAlerts: "Alertas de treino",
       reminderHint: "Escolha dias e horario para receber um alerta desafiador antes de deixar o treino passar.",
       reminderToggleOn: "Ativo",
       reminderToggleOff: "Pausado",
       reminderTimeLabel: "Horario (HH:MM)",
       reminderTimePlaceholder: "Ex: 19:30",
       reminderDaysLabel: "Dias da semana",
+      reminderFrequencyLabel: "Frequencia",
+      frequencyWeekdays: "Seg a Sex",
+      frequencyEveryday: "Todos os dias",
+      frequencyWeekends: "Fim de semana",
+      frequencyCustom: "Personalizado",
       reminderSave: "Salvar lembrete",
       reminderSaved: "Lembrete atualizado.",
       reminderInvalidTime: "Informe um horario valido no formato HH:MM.",
@@ -433,7 +465,11 @@ export const translations = {
       refreshTitle: "Workout refresh recommended",
       refreshBodySingle: "1 workout was created more than %{months} months ago. Create a new one to improve hypertrophy.",
       refreshBodyPlural:
-        "%{count} workouts were created more than %{months} months ago. Create new ones to improve hypertrophy."
+        "%{count} workouts were created more than %{months} months ago. Create new ones to improve hypertrophy.",
+      unlockModalTitle: "New achievement!",
+      unlockModalHint: "Tap to unlock and keep progressing.",
+      unlockAction: "Unlock",
+      unlockProgress: "%{current} of %{total}"
     },
     plans: {
       title: "Planner",
@@ -519,9 +555,9 @@ export const translations = {
       streak: "Current streak",
       achievements: "Achievements",
       streakLabel: "DAYS IN A ROW",
-      offensiveDaysYear: "Offensive days",
+      offensiveDaysYear: "Workouts completed",
       offensiveLevel: "Level %{level}",
-      nextLevelIn: "%{days} days to next",
+      nextLevelIn: "%{days} workouts to next",
       maxLevel: "Max level",
       weekdays: ["S", "M", "T", "W", "T", "F", "S"],
       empty: "No completed workouts yet.",
@@ -558,9 +594,25 @@ export const translations = {
         title: "7-day streak",
         detail: "A full week with consistency."
       },
+      streak14: {
+        title: "14-day streak",
+        detail: "Two full weeks without breaking your routine."
+      },
+      streak30: {
+        title: "30-day streak",
+        detail: "A full month of discipline."
+      },
       workout10: {
         title: "10 workouts",
         detail: "You reached 10 completed workouts."
+      },
+      workout25: {
+        title: "25 workouts",
+        detail: "You reached 25 completed workouts."
+      },
+      workout50: {
+        title: "50 workouts",
+        detail: "You hit the 50 completed workouts mark."
       }
     },
     settings: {
@@ -577,6 +629,9 @@ export const translations = {
       preferences: "Preferences",
       saveProfile: "Save profile",
       profileSaved: "Profile updated.",
+      personalData: "Personal data",
+      mainGoal: "Main goal",
+      appTheme: "App theme",
       themeLabel: "Theme",
       theme: {
         light: "Light",
@@ -584,6 +639,9 @@ export const translations = {
         system: "System"
       },
       language: "Language",
+      languagePtBr: "Portuguese (BR)",
+      languageEn: "English",
+      languageEs: "Spanish",
       login: "Account login",
       logout: "Log out",
       email: "Email",
@@ -602,12 +660,18 @@ export const translations = {
       backupError: "Cloud sync failed.",
       restoreSuccess: "Backup restored successfully.",
       reminderTitle: "Workout reminders",
+      trainingAlerts: "Training alerts",
       reminderHint: "Pick weekdays and time to receive a challenging reminder before skipping your workout.",
       reminderToggleOn: "Enabled",
       reminderToggleOff: "Paused",
       reminderTimeLabel: "Time (HH:MM)",
       reminderTimePlaceholder: "Eg: 19:30",
       reminderDaysLabel: "Weekdays",
+      reminderFrequencyLabel: "Frequency",
+      frequencyWeekdays: "Mon to Fri",
+      frequencyEveryday: "Every day",
+      frequencyWeekends: "Weekends",
+      frequencyCustom: "Custom",
       reminderSave: "Save reminder",
       reminderSaved: "Reminder updated.",
       reminderInvalidTime: "Enter a valid time in HH:MM format.",
@@ -777,7 +841,11 @@ export const translations = {
       refreshBodySingle:
         "1 entrenamiento fue creado hace mas de %{months} meses. Crea uno nuevo para mejorar la hipertrofia.",
       refreshBodyPlural:
-        "%{count} entrenamientos fueron creados hace mas de %{months} meses. Crea nuevos para mejorar la hipertrofia."
+        "%{count} entrenamientos fueron creados hace mas de %{months} meses. Crea nuevos para mejorar la hipertrofia.",
+      unlockModalTitle: "Nuevo logro!",
+      unlockModalHint: "Toca para desbloquear y seguir avanzando.",
+      unlockAction: "Desbloquear",
+      unlockProgress: "%{current} de %{total}"
     },
     plans: {
       title: "Planificador",
@@ -864,9 +932,9 @@ export const translations = {
       streak: "Racha actual",
       achievements: "Logros",
       streakLabel: "DIAS SEGUIDOS",
-      offensiveDaysYear: "Dias de ofensiva",
+      offensiveDaysYear: "Entrenamientos acumulados",
       offensiveLevel: "Nivel %{level}",
-      nextLevelIn: "Faltan %{days} dias",
+      nextLevelIn: "Faltan %{days} entrenamientos",
       maxLevel: "Nivel maximo",
       weekdays: ["D", "L", "M", "M", "J", "V", "S"],
       empty: "Aun no hay entrenamientos completados.",
@@ -903,9 +971,25 @@ export const translations = {
         title: "Racha de 7 dias",
         detail: "Una semana completa con consistencia."
       },
+      streak14: {
+        title: "Racha de 14 dias",
+        detail: "Dos semanas entrenando sin romper la secuencia."
+      },
+      streak30: {
+        title: "Racha de 30 dias",
+        detail: "Un mes completo de disciplina."
+      },
       workout10: {
         title: "10 entrenamientos",
         detail: "Llegaste a 10 entrenamientos completados."
+      },
+      workout25: {
+        title: "25 entrenamientos",
+        detail: "Llegaste a 25 entrenamientos completados."
+      },
+      workout50: {
+        title: "50 entrenamientos",
+        detail: "Alcanzaste la marca de 50 entrenamientos completados."
       }
     },
     settings: {
@@ -922,6 +1006,9 @@ export const translations = {
       preferences: "Preferencias",
       saveProfile: "Guardar perfil",
       profileSaved: "Perfil actualizado.",
+      personalData: "Datos personales",
+      mainGoal: "Objetivo principal",
+      appTheme: "Tema de la app",
       themeLabel: "Tema",
       theme: {
         light: "Claro",
@@ -929,6 +1016,9 @@ export const translations = {
         system: "Sistema"
       },
       language: "Idioma",
+      languagePtBr: "Portugues (BR)",
+      languageEn: "Ingles",
+      languageEs: "Espanol",
       login: "Inicio de sesion",
       logout: "Salir",
       email: "Email",
@@ -947,12 +1037,18 @@ export const translations = {
       backupError: "Fallo al sincronizar.",
       restoreSuccess: "Backup restaurado con exito.",
       reminderTitle: "Recordatorios de entrenamiento",
+      trainingAlerts: "Alertas de entrenamiento",
       reminderHint: "Elige dias y horario para recibir un aviso desafiante antes de saltarte el entrenamiento.",
       reminderToggleOn: "Activo",
       reminderToggleOff: "Pausado",
       reminderTimeLabel: "Horario (HH:MM)",
       reminderTimePlaceholder: "Ej: 19:30",
       reminderDaysLabel: "Dias de la semana",
+      reminderFrequencyLabel: "Frecuencia",
+      frequencyWeekdays: "Lun a Vie",
+      frequencyEveryday: "Todos los dias",
+      frequencyWeekends: "Fin de semana",
+      frequencyCustom: "Personalizado",
       reminderSave: "Guardar recordatorio",
       reminderSaved: "Recordatorio actualizado.",
       reminderInvalidTime: "Ingresa un horario valido en formato HH:MM.",

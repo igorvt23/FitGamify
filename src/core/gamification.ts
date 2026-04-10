@@ -36,10 +36,34 @@ export function resolveNewAchievements(params: {
       unlocks: (_, streak) => streak >= 7
     },
     {
+      code: "streak_14",
+      title: t("achievement.streak14.title"),
+      detail: t("achievement.streak14.detail"),
+      unlocks: (_, streak) => streak >= 14
+    },
+    {
+      code: "streak_30",
+      title: t("achievement.streak30.title"),
+      detail: t("achievement.streak30.detail"),
+      unlocks: (_, streak) => streak >= 30
+    },
+    {
       code: "workout_10",
       title: t("achievement.workout10.title"),
       detail: t("achievement.workout10.detail"),
       unlocks: (total) => total >= 10
+    },
+    {
+      code: "workout_25",
+      title: t("achievement.workout25.title"),
+      detail: t("achievement.workout25.detail"),
+      unlocks: (total) => total >= 25
+    },
+    {
+      code: "workout_50",
+      title: t("achievement.workout50.title"),
+      detail: t("achievement.workout50.detail"),
+      unlocks: (total) => total >= 50
     }
   ];
 
@@ -53,4 +77,3 @@ export function resolveNewAchievements(params: {
       unlockedAtIso: new Date().toISOString()
     }));
 }
-
