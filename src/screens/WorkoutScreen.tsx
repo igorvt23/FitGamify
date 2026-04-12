@@ -226,7 +226,7 @@ export function WorkoutScreen() {
                                 {exerciseIndex + 1}. {exercise.exerciseName}
                               </Text>
                               <Text style={[styles.templateExerciseMeta, { color: colors.textMuted, fontFamily: typography.body }]}>
-                                {exercise.repScheme} - {exercise.defaultWeightKg}kg
+                                {exercise.repScheme} - {formatTemplateWeight(exercise)}
                               </Text>
                             </View>
                           ))
@@ -820,6 +820,14 @@ function parseLocaleNumber(value: string) {
     return null;
   }
   return parsed;
+}
+
+function formatTemplateWeight(exercise: TemplateExercise) {
+  const label = exercise.defaultWeightLabel?.trim();
+  if (label) {
+    return label;
+  }
+  return `${exercise.defaultWeightKg}kg`;
 }
 
 function getAchievementUnlockIcon(code: Achievement["code"]) {

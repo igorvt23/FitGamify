@@ -105,7 +105,7 @@ type AppContextData = {
     muscleGroup: string;
     assignedWeekdays: Weekday[];
     orderIndex?: number;
-    exercises: Array<{ exerciseName: string; repScheme: string; defaultWeightKg: number; imageKey: string }>;
+    exercises: Array<{ exerciseName: string; repScheme: string; defaultWeightLabel: string; imageKey: string }>;
   }) => Promise<void>;
   moveTemplate: (templateId: string, direction: "up" | "down") => Promise<void>;
   updateTemplateInfo: (templateId: string, name: string, muscleGroup: string, assignedWeekdays: Weekday[]) => Promise<void>;
@@ -114,14 +114,14 @@ type AppContextData = {
     templateId: string;
     exerciseName: string;
     repScheme: string;
-    defaultWeightKg: number;
+    defaultWeightLabel: string;
     imageKey: string;
   }) => Promise<void>;
   updateTemplateExerciseById: (params: {
     exerciseId: string;
     exerciseName: string;
     repScheme: string;
-    defaultWeightKg: number;
+    defaultWeightLabel: string;
     imageKey: string;
   }) => Promise<void>;
   deleteTemplateExerciseById: (exerciseId: string) => Promise<void>;
@@ -530,7 +530,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       muscleGroup: string;
       assignedWeekdays: Weekday[];
       orderIndex?: number;
-      exercises: Array<{ exerciseName: string; repScheme: string; defaultWeightKg: number; imageKey: string }>;
+      exercises: Array<{ exerciseName: string; repScheme: string; defaultWeightLabel: string; imageKey: string }>;
     }) => {
       const templateId = await createTemplate(params.name, params.muscleGroup, params.assignedWeekdays, params.orderIndex);
       await clearTemplateExercises(templateId);
@@ -543,7 +543,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           templateId,
           item.exerciseName,
           item.repScheme,
-          item.defaultWeightKg,
+          item.defaultWeightLabel,
           item.imageKey || "dumbbell"
         );
       }
@@ -586,14 +586,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       templateId: string;
       exerciseName: string;
       repScheme: string;
-      defaultWeightKg: number;
+      defaultWeightLabel: string;
       imageKey: string;
     }) => {
       await addExerciseToTemplateWithWeight(
         params.templateId,
         params.exerciseName,
         params.repScheme,
-        params.defaultWeightKg,
+        params.defaultWeightLabel,
         params.imageKey || "dumbbell"
       );
       await refreshAll();
@@ -607,13 +607,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       exerciseId: string;
       exerciseName: string;
       repScheme: string;
-      defaultWeightKg: number;
+      defaultWeightLabel: string;
       imageKey: string;
     }) => {
       await updateTemplateExercise(params.exerciseId, {
         exerciseName: params.exerciseName,
         repScheme: params.repScheme,
-        defaultWeightKg: params.defaultWeightKg,
+        defaultWeightLabel: params.defaultWeightLabel,
         imageKey: params.imageKey || "dumbbell"
       });
       await refreshAll();

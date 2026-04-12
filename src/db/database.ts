@@ -108,6 +108,7 @@ export async function initDatabase() {
       exercise_name TEXT NOT NULL,
       rep_scheme TEXT NOT NULL DEFAULT '4x10',
       default_weight_kg REAL NOT NULL DEFAULT 0,
+      default_weight_label TEXT NOT NULL DEFAULT '0',
       is_active INTEGER NOT NULL DEFAULT 1,
       image_key TEXT NOT NULL,
       FOREIGN KEY(template_id) REFERENCES workout_templates(id) ON DELETE CASCADE
@@ -332,9 +333,11 @@ export async function saveExerciseExecution(
       exercise.sessionId
     );
     if (session?.templateId) {
+      const promotedWeightKg = Math.max(0, Math.round(params.weightKg * 100) / 100);
       await db.runAsync(
-        "UPDATE template_exercises SET default_weight_kg = ? WHERE template_id = ? AND exercise_name = ?",
-        Math.max(0, params.weightKg),
+        "UPDATE template_exercises SET default_weight_kg = ?, default_weight_label = ? WHERE template_id = ? AND exercise_name = ?",
+        promotedWeightKg,
+        formatWeightLabelFromNumber(promotedWeightKg),
         session.templateId,
         exercise.name
       );
@@ -500,11 +503,12 @@ export async function getTemplateExercises(templateId: string, includeInactive =
       isActiveRaw?: number;
     }
   >(
-    `SELECT id, template_id as templateId, exercise_name as exerciseName, rep_scheme as repScheme, default_weight_kg as defaultWeightKg, image_key as imageKey, is_active as isActiveRaw FROM template_exercises WHERE template_id = ?${whereActiveClause} ORDER BY rowid ASC`,
+    `SELECT id, template_id as templateId, exercise_name as exerciseName, rep_scheme as repScheme, default_weight_kg as defaultWeightKg, default_weight_label as defaultWeightLabel, image_key as imageKey, is_active as isActiveRaw FROM template_exercises WHERE template_id = ?${whereActiveClause} ORDER BY rowid ASC`,
     templateId
   );
   return rows.map((item) => ({
     ...item,
+    defaultWeightLabel: normalizeWeightLabel(item.defaultWeightLabel, item.defaultWeightKg),
     isActive: item.isActiveRaw == null ? true : Boolean(item.isActiveRaw)
   }));
 }
@@ -531,14 +535,14 @@ export async function createTemplate(name: string, muscleGroup: string, assigned
 }
 
 export async function addExerciseToTemplate(templateId: string, exerciseName: string, repScheme: string, imageKey: string) {
-  await addExerciseToTemplateWithWeight(templateId, exerciseName, repScheme, 0, imageKey);
+  await addExerciseToTemplateWithWeight(templateId, exerciseName, repScheme, "0", imageKey);
 }
 
 export async function addExerciseToTemplateWithWeight(
   templateId: string,
   exerciseName: string,
   repScheme: string,
-  defaultWeightKg: number,
+  defaultWeightLabel: string,
   imageKey: string
 ) {
   await insertTemplateExerciseRow({
@@ -546,7 +550,8 @@ export async function addExerciseToTemplateWithWeight(
     templateId,
     exerciseName,
     repScheme,
-    defaultWeightKg,
+    defaultWeightKg: parseWeightLabelToNumber(defaultWeightLabel),
+    defaultWeightLabel,
     imageKey
   });
 }
@@ -575,18 +580,21 @@ export async function updateTemplateExercise(
   params: {
     exerciseName: string;
     repScheme: string;
-    defaultWeightKg: number;
+    defaultWeightLabel: string;
     imageKey: string;
   }
 ) {
   const columns = await getTemplateExercisesLegacyColumns();
   const normalizedRepScheme = normalizeRepScheme(params.repScheme);
+  const normalizedDefaultWeightLabel = normalizeWeightLabel(params.defaultWeightLabel);
+  const normalizedDefaultWeightKg = parseWeightLabelToNumber(normalizedDefaultWeightLabel);
   const { sets, reps } = extractLegacySetAndRepValues(normalizedRepScheme);
-  const assignments = ["exercise_name = ?", "rep_scheme = ?", "default_weight_kg = ?", "image_key = ?"];
+  const assignments = ["exercise_name = ?", "rep_scheme = ?", "default_weight_kg = ?", "default_weight_label = ?", "image_key = ?"];
   const values: Array<string | number> = [
     params.exerciseName.trim(),
     normalizedRepScheme,
-    Math.max(0, params.defaultWeightKg),
+    normalizedDefaultWeightKg,
+    normalizedDefaultWeightLabel,
     params.imageKey
   ];
 
@@ -774,6 +782,7 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
       sets?: number;
       reps?: number;
       defaultWeightKg?: number;
+      defaultWeightLabel?: string;
       isActive?: boolean;
     };
     await insertTemplateExerciseRow({
@@ -782,6 +791,7 @@ export async function importBackupPayload(payload: CloudBackupPayload) {
       exerciseName: item.exerciseName,
       repScheme: item.repScheme ?? `${legacyItem.sets ?? 4}x${legacyItem.reps ?? 10}`,
       defaultWeightKg: item.defaultWeightKg ?? legacyItem.defaultWeightKg ?? 0,
+      defaultWeightLabel: item.defaultWeightLabel ?? String(item.defaultWeightKg ?? legacyItem.defaultWeightKg ?? 0),
       imageKey: item.imageKey || "dumbbell",
       isActive: legacyItem.isActive ?? true
     });
@@ -1000,6 +1010,7 @@ async function runMigration() {
   await addColumnIfMissing("workout_templates", "is_active", "INTEGER NOT NULL DEFAULT 1");
   await addColumnIfMissing("template_exercises", "rep_scheme", "TEXT NOT NULL DEFAULT '4x10'");
   await addColumnIfMissing("template_exercises", "default_weight_kg", "REAL NOT NULL DEFAULT 0");
+  await addColumnIfMissing("template_exercises", "default_weight_label", "TEXT NOT NULL DEFAULT '0'");
   await addColumnIfMissing("template_exercises", "is_active", "INTEGER NOT NULL DEFAULT 1");
   await addColumnIfMissing("exercises", "rep_scheme", "TEXT NOT NULL DEFAULT '4x10'");
   await addColumnIfMissing("exercises", "planned_weight_kg", "REAL NOT NULL DEFAULT 0");
@@ -1019,6 +1030,9 @@ async function runMigration() {
   await db.runAsync("UPDATE exercises SET planned_weight_kg = weight_kg WHERE planned_weight_kg IS NULL OR planned_weight_kg = 0").catch(() => undefined);
   await db.runAsync(
     "UPDATE template_exercises SET rep_scheme = CAST(sets AS TEXT) || 'x' || CAST(reps AS TEXT) WHERE (rep_scheme IS NULL OR rep_scheme = '' OR rep_scheme = '4x10') AND sets IS NOT NULL AND reps IS NOT NULL"
+  ).catch(() => undefined);
+  await db.runAsync(
+    "UPDATE template_exercises SET default_weight_label = CAST(default_weight_kg AS TEXT) WHERE default_weight_label IS NULL OR TRIM(default_weight_label) = ''"
   ).catch(() => undefined);
   await backfillExerciseSetLogs();
 
@@ -1144,6 +1158,7 @@ type TemplateExerciseInsertInput = {
   exerciseName: string;
   repScheme: string;
   defaultWeightKg: number;
+  defaultWeightLabel?: string;
   imageKey: string;
   isActive?: boolean;
 };
@@ -1241,16 +1256,18 @@ async function insertTemplateExerciseRow(input: TemplateExerciseInsertInput) {
   const columns = await getTemplateExercisesLegacyColumns();
   const normalizedRepScheme = normalizeRepScheme(input.repScheme);
   const normalizedDefaultWeightKg = Math.max(0, Number(input.defaultWeightKg) || 0);
+  const normalizedDefaultWeightLabel = normalizeWeightLabel(input.defaultWeightLabel, normalizedDefaultWeightKg);
   const normalizedIsActive = input.isActive ?? true;
   const { sets, reps } = extractLegacySetAndRepValues(normalizedRepScheme);
 
-  const columnNames = ["id", "template_id", "exercise_name", "rep_scheme", "default_weight_kg", "is_active", "image_key"];
+  const columnNames = ["id", "template_id", "exercise_name", "rep_scheme", "default_weight_kg", "default_weight_label", "is_active", "image_key"];
   const values: Array<string | number> = [
     input.id,
     input.templateId,
     input.exerciseName.trim(),
     normalizedRepScheme,
     normalizedDefaultWeightKg,
+    normalizedDefaultWeightLabel,
     normalizedIsActive ? 1 : 0,
     input.imageKey || "dumbbell"
   ];
@@ -1422,6 +1439,41 @@ function getWeekdayFromIsoDate(dateIso: string): Weekday {
 function normalizeRepScheme(value: string | null | undefined) {
   const normalized = (value ?? "").replace(/\s+/g, "");
   return normalized.length > 0 ? normalized : "4x10";
+}
+
+function normalizeWeightLabel(value: string | null | undefined, fallbackNumeric = 0) {
+  const normalized = (value ?? "").trim();
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return String(Math.max(0, Number.isFinite(fallbackNumeric) ? fallbackNumeric : 0));
+}
+
+function formatWeightLabelFromNumber(value: number) {
+  const normalized = Math.max(0, Math.round(value * 100) / 100);
+  if (Number.isInteger(normalized)) {
+    return String(normalized);
+  }
+  return String(normalized).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1");
+}
+
+function parseWeightLabelToNumber(value: string | null | undefined) {
+  const normalized = (value ?? "").replace(",", ".").trim();
+  if (!normalized) {
+    return 0;
+  }
+
+  const firstNumberMatch = normalized.match(/-?\d+(?:\.\d+)?/);
+  if (!firstNumberMatch) {
+    return 0;
+  }
+
+  const parsed = Number(firstNumberMatch[0]);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(parsed * 100) / 100);
 }
 
 function buildInitialSetLogs(repScheme: string | null | undefined): ExerciseSetLog[] {

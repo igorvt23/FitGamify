@@ -1,17 +1,30 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAppContext } from "../state/AppContext";
-import { useI18n } from "../i18n";
-import { useTheme } from "../theme/useTheme";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
-import { Button } from "../components/ui/Button";
-import { Badge } from "../components/ui/Badge";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { TEMPLATE_REFRESH_INTERVAL_MONTHS, getTemplatesNeedingRefresh } from "../core/templateRefresh";
-import { TemplateExercise } from "../types";
+import { useI18n } from "../i18n";
+import { useAppContext } from "../state/AppContext";
+import { useTheme } from "../theme/useTheme";
+import { TemplateExercise, WorkoutTemplate } from "../types";
+
+type DraftExercise = {
+  exerciseName: string;
+  repScheme: string;
+  defaultWeightLabel: string;
+  imageKey: string;
+};
+
+type ExerciseEditDraft = {
+  exerciseName: string;
+  repScheme: string;
+  defaultWeightLabel: string;
+};
 
 export function PlansScreen() {
   const { t } = useI18n();
@@ -21,7 +34,10 @@ export function PlansScreen() {
     saveTemplate,
     fetchTemplateExercises,
     setTemplateActiveById,
-    setTemplateExerciseActiveById
+    setTemplateExerciseActiveById,
+    updateTemplateInfo,
+    updateTemplateExerciseById,
+    moveTemplate
   } = useAppContext();
   const { colors, typography } = useTheme();
   const insets = useSafeAreaInsets();
@@ -31,15 +47,21 @@ export function PlansScreen() {
   const [sequenceNumber, setSequenceNumber] = useState("");
   const [exerciseName, setExerciseName] = useState("");
   const [repScheme, setRepScheme] = useState("4x10");
-  const [defaultWeightKg, setDefaultWeightKg] = useState("0");
-  const [draftExercises, setDraftExercises] = useState<Array<{ exerciseName: string; repScheme: string; defaultWeightKg: number; imageKey: string }>>([]);
+  const [defaultWeightLabel, setDefaultWeightLabel] = useState("0");
+  const [draftExercises, setDraftExercises] = useState<DraftExercise[]>([]);
   const [templateCounts, setTemplateCounts] = useState<Record<string, number>>({});
   const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
   const [loadingTemplateId, setLoadingTemplateId] = useState<string | null>(null);
   const [templateExercisesById, setTemplateExercisesById] = useState<Record<string, TemplateExercise[]>>({});
   const [message, setMessage] = useState("");
-  const templatesNeedingRefresh = useMemo(() => getTemplatesNeedingRefresh(templates), [templates]);
-  const activeTemplatesCount = useMemo(() => templates.filter((item) => item.isActive).length, [templates]);
+  const [showNewPlanCard, setShowNewPlanCard] = useState(true);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editingTemplateMuscleGroup, setEditingTemplateMuscleGroup] = useState("");
+  const [editingExerciseDrafts, setEditingExerciseDrafts] = useState<Record<string, ExerciseEditDraft>>({});
+
+  const orderedTemplates = useMemo(() => templates.filter((item) => item.isActive), [templates]);
+  const templatesNeedingRefresh = useMemo(() => getTemplatesNeedingRefresh(orderedTemplates), [orderedTemplates]);
+  const activeTemplatesCount = orderedTemplates.length;
   const refreshMessageKey = templatesNeedingRefresh.length === 1 ? "plans.refreshBodySingle" : "plans.refreshBodyPlural";
 
   const allExerciseNames = useMemo(() => {
@@ -52,29 +74,57 @@ export function PlansScreen() {
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [draftExercises, exerciseLibrary, templateExercisesById]);
 
+  useEffect(() => {
+    let active = true;
+
+    const loadCounts = async () => {
+      const entries = await Promise.all(
+        orderedTemplates.map(async (item) => {
+          const exercises = await fetchTemplateExercises(item.id);
+          return [item.id, exercises.length] as const;
+        })
+      );
+      if (active) {
+        setTemplateCounts(Object.fromEntries(entries));
+      }
+    };
+
+    if (orderedTemplates.length > 0) {
+      void loadCounts();
+    } else {
+      setTemplateCounts({});
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [fetchTemplateExercises, orderedTemplates]);
+
   const addExercise = () => {
     if (!exerciseName.trim()) {
       return;
     }
+
     setDraftExercises((prev) => [
       ...prev,
       {
         exerciseName: exerciseName.trim(),
         repScheme: normalizeRepScheme(repScheme),
-        defaultWeightKg: normalizeWeight(defaultWeightKg),
+        defaultWeightLabel: normalizeWeightLabel(defaultWeightLabel),
         imageKey: "dumbbell"
       }
     ]);
     setExerciseName("");
     setRepScheme("4x10");
-    setDefaultWeightKg("0");
+    setDefaultWeightLabel("0");
   };
 
   const handleSave = async () => {
-    const baseName = templateName.trim() || muscleGroup.trim() || `${t("plans.defaultName")} ${templates.length + 1}`;
+    const baseName = templateName.trim() || muscleGroup.trim() || `${t("plans.defaultName")} ${orderedTemplates.length + 1}`;
     const orderedName = sequenceNumber.trim() ? `${sequenceNumber.trim()}. ${baseName}` : baseName;
     const numericOrder = Number(sequenceNumber.trim());
     const orderIndex = Number.isFinite(numericOrder) ? Math.max(0, numericOrder - 1) : undefined;
+
     await saveTemplate({
       name: orderedName,
       muscleGroup: muscleGroup.trim() || t("plans.defaultMuscle"),
@@ -87,46 +137,38 @@ export function PlansScreen() {
               {
                 exerciseName: exerciseName.trim() || t("plans.defaultExercise"),
                 repScheme: normalizeRepScheme(repScheme),
-                defaultWeightKg: normalizeWeight(defaultWeightKg),
+                defaultWeightLabel: normalizeWeightLabel(defaultWeightLabel),
                 imageKey: "dumbbell"
               }
             ]
     });
+
     setTemplateName("");
     setMuscleGroup("");
     setSequenceNumber("");
     setExerciseName("");
     setRepScheme("4x10");
-    setDefaultWeightKg("0");
+    setDefaultWeightLabel("0");
     setDraftExercises([]);
+    setMessage("");
   };
-  const orderedTemplates = useMemo(() => [...templates], [templates]);
 
-  useEffect(() => {
-    let active = true;
-
-    const loadCounts = async () => {
-      const entries = await Promise.all(
-        templates.map(async (item) => {
-          const exercises = await fetchTemplateExercises(item.id, true);
-          return [item.id, exercises.filter((exercise) => exercise.isActive).length] as const;
-        })
-      );
-      if (active) {
-        setTemplateCounts(Object.fromEntries(entries));
-      }
-    };
-
-    if (templates.length > 0) {
-      void loadCounts();
-    } else {
-      setTemplateCounts({});
+  const ensureTemplateDetailsLoaded = async (templateId: string) => {
+    const cached = templateExercisesById[templateId];
+    if (cached) {
+      return cached;
     }
 
-    return () => {
-      active = false;
-    };
-  }, [fetchTemplateExercises, templates]);
+    setLoadingTemplateId(templateId);
+    try {
+      const exercises = await fetchTemplateExercises(templateId);
+      setTemplateExercisesById((current) => ({ ...current, [templateId]: exercises }));
+      setTemplateCounts((current) => ({ ...current, [templateId]: exercises.length }));
+      return exercises;
+    } finally {
+      setLoadingTemplateId((current) => (current === templateId ? null : current));
+    }
+  };
 
   const handleToggleTemplateDetails = async (templateId: string) => {
     const shouldExpand = expandedTemplateId !== templateId;
@@ -134,39 +176,141 @@ export function PlansScreen() {
     if (!shouldExpand || loadingTemplateId === templateId) {
       return;
     }
-    setLoadingTemplateId(templateId);
+
     try {
-      const exercises = await fetchTemplateExercises(templateId, true);
-      setTemplateExercisesById((current) => ({ ...current, [templateId]: exercises }));
-      setTemplateCounts((current) => ({
-        ...current,
-        [templateId]: exercises.filter((exercise) => exercise.isActive).length
-      }));
+      await ensureTemplateDetailsLoaded(templateId);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t("settings.authError"));
-    } finally {
-      setLoadingTemplateId((current) => (current === templateId ? null : current));
     }
   };
 
   const reloadTemplateDetails = async (templateId: string) => {
-    const exercises = await fetchTemplateExercises(templateId, true);
+    const exercises = await fetchTemplateExercises(templateId);
     setTemplateExercisesById((current) => ({ ...current, [templateId]: exercises }));
     setTemplateCounts((current) => ({
       ...current,
-      [templateId]: exercises.filter((item) => item.isActive).length
+      [templateId]: exercises.length
     }));
+    return exercises;
   };
 
-  const handleToggleTemplateActive = async (templateId: string, isActive: boolean) => {
-    await setTemplateActiveById(templateId, isActive);
-    setMessage(isActive ? t("plans.templateActivated") : t("plans.templateDeactivated"));
+  const handleToggleTemplateActive = async (templateId: string) => {
+    await setTemplateActiveById(templateId, false);
+    if (expandedTemplateId === templateId) {
+      setExpandedTemplateId(null);
+    }
+    if (editingTemplateId === templateId) {
+      setEditingTemplateId(null);
+      setEditingTemplateMuscleGroup("");
+      setEditingExerciseDrafts({});
+    }
+
+    setTemplateExercisesById((current) => {
+      const next = { ...current };
+      delete next[templateId];
+      return next;
+    });
+    setTemplateCounts((current) => {
+      const next = { ...current };
+      delete next[templateId];
+      return next;
+    });
+    setMessage(t("plans.templateDeactivated"));
   };
 
-  const handleToggleExerciseActive = async (templateId: string, exerciseId: string, isActive: boolean) => {
-    await setTemplateExerciseActiveById(exerciseId, isActive);
-    await reloadTemplateDetails(templateId);
-    setMessage(isActive ? t("plans.exerciseActivated") : t("plans.exerciseDeactivated"));
+  const handleToggleExerciseActive = async (templateId: string, exerciseId: string) => {
+    await setTemplateExerciseActiveById(exerciseId, false);
+    const nextExercises = await reloadTemplateDetails(templateId);
+
+    setEditingExerciseDrafts((current) => {
+      const next = { ...current };
+      delete next[exerciseId];
+      return next;
+    });
+
+    if (nextExercises.length === 0) {
+      setEditingTemplateId(null);
+      setEditingTemplateMuscleGroup("");
+      setEditingExerciseDrafts({});
+    }
+
+    setMessage(t("plans.exerciseDeactivated"));
+  };
+
+  const handleStartTemplateEdit = async (item: WorkoutTemplate) => {
+    const exercises = await ensureTemplateDetailsLoaded(item.id);
+    setExpandedTemplateId(item.id);
+    setEditingTemplateId(item.id);
+    setEditingTemplateMuscleGroup(item.muscleGroup);
+    setEditingExerciseDrafts(
+      Object.fromEntries(
+        exercises.map((exercise) => [
+          exercise.id,
+          {
+            exerciseName: exercise.exerciseName,
+            repScheme: exercise.repScheme,
+            defaultWeightLabel: normalizeWeightLabel(exercise.defaultWeightLabel)
+          }
+        ])
+      )
+    );
+    setMessage("");
+  };
+
+  const handleCancelTemplateEdit = () => {
+    setEditingTemplateId(null);
+    setEditingTemplateMuscleGroup("");
+    setEditingExerciseDrafts({});
+  };
+
+  const handleSaveTemplateEdit = async (item: WorkoutTemplate) => {
+    if (editingTemplateId !== item.id) {
+      return;
+    }
+
+    const normalizedMuscleGroup = editingTemplateMuscleGroup.trim() || item.muscleGroup;
+    if (normalizedMuscleGroup !== item.muscleGroup) {
+      await updateTemplateInfo(item.id, item.name, normalizedMuscleGroup, item.assignedWeekdays);
+    }
+
+    const exercises = templateExercisesById[item.id] ?? [];
+    for (const exercise of exercises) {
+      const draft = editingExerciseDrafts[exercise.id];
+      if (!draft) {
+        continue;
+      }
+
+      const normalizedExerciseName = draft.exerciseName.trim() || exercise.exerciseName;
+      const normalizedRepScheme = normalizeRepScheme(draft.repScheme);
+      const normalizedWeightLabel = normalizeWeightLabel(draft.defaultWeightLabel);
+      const normalizedCurrentWeightLabel = normalizeWeightLabel(exercise.defaultWeightLabel);
+
+      const hasChanged =
+        normalizedExerciseName !== exercise.exerciseName ||
+        normalizedRepScheme !== exercise.repScheme ||
+        normalizedWeightLabel !== normalizedCurrentWeightLabel;
+
+      if (!hasChanged) {
+        continue;
+      }
+
+      await updateTemplateExerciseById({
+        exerciseId: exercise.id,
+        exerciseName: normalizedExerciseName,
+        repScheme: normalizedRepScheme,
+        defaultWeightLabel: normalizedWeightLabel,
+        imageKey: exercise.imageKey
+      });
+    }
+
+    await reloadTemplateDetails(item.id);
+    handleCancelTemplateEdit();
+    setMessage(t("plans.templateUpdated"));
+  };
+
+  const handleMoveTemplate = async (templateId: string, direction: "up" | "down") => {
+    await moveTemplate(templateId, direction);
+    setMessage("");
   };
 
   return (
@@ -182,7 +326,7 @@ export function PlansScreen() {
       </View>
 
       {templatesNeedingRefresh.length > 0 ? (
-        <Card style={[styles.refreshCard, { borderColor: colors.warning, backgroundColor: colors.surfaceAlt }]}>
+        <Card style={{ ...styles.refreshCard, borderColor: colors.warning, backgroundColor: colors.surfaceAlt }}>
           <View style={styles.row}>
             <MaterialCommunityIcons name="clock-alert-outline" size={18} color={colors.warning} />
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("plans.refreshTitle")}</Text>
@@ -193,56 +337,74 @@ export function PlansScreen() {
         </Card>
       ) : null}
 
-      <Card style={[styles.newPlanCard, { borderColor: colors.primarySoft }]}>
-        <View style={styles.rowBetween}>
+      <Card style={{ ...styles.newPlanCard, borderColor: colors.primarySoft }}>
+        <Pressable onPress={() => setShowNewPlanCard((current) => !current)} style={styles.rowBetween}>
           <View style={styles.row}>
             <MaterialCommunityIcons name="clipboard-text-outline" size={18} color={colors.primary} />
             <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: typography.title }]}>{t("plans.newPlan")}</Text>
           </View>
-        </View>
+          <MaterialCommunityIcons
+            name={showNewPlanCard ? "chevron-up" : "chevron-down"}
+            size={18}
+            color={colors.textMuted}
+          />
+        </Pressable>
 
-        <Text style={[styles.label, { color: colors.text }]}>{t("plans.muscleGroup")}</Text>
-        <View style={styles.row}>
-          <Input placeholder={t("plans.muscleGroup")} value={muscleGroup} onChangeText={setMuscleGroup} style={styles.flex} />
-          <Input placeholder={t("plans.sequenceNumber")} value={sequenceNumber} onChangeText={setSequenceNumber} style={styles.smallInput} />
-        </View>
+        {showNewPlanCard ? (
+          <View style={styles.newPlanBody}>
+            <Text style={[styles.label, { color: colors.text }]}>{t("plans.muscleGroup")}</Text>
+            <View style={styles.row}>
+              <Input placeholder={t("plans.muscleGroup")} value={muscleGroup} onChangeText={setMuscleGroup} style={styles.flex} />
+              <Input
+                placeholder={t("plans.sequenceNumber")}
+                value={sequenceNumber}
+                onChangeText={setSequenceNumber}
+                style={styles.smallInput}
+              />
+            </View>
 
-        <Card variant="muted" style={styles.exerciseDraftCard}>
-          <Text style={[styles.miniTitle, { color: colors.text }]}>{t("plans.addExerciseToTemplate")}</Text>
-          <Input placeholder={t("plans.exerciseName")} value={exerciseName} onChangeText={setExerciseName} />
-          <View style={styles.row}>
-            <Input placeholder={t("plans.repScheme")} value={repScheme} onChangeText={setRepScheme} style={styles.flex} />
-            <Input
-              placeholder={t("plans.defaultWeightKg")}
-              value={defaultWeightKg}
-              onChangeText={setDefaultWeightKg}
-              keyboardType="decimal-pad"
-              style={styles.smallInput}
+            <Card variant="muted" style={styles.exerciseDraftCard}>
+              <Text style={[styles.miniTitle, { color: colors.text }]}>{t("plans.addExerciseToTemplate")}</Text>
+              <Input placeholder={t("plans.exerciseName")} value={exerciseName} onChangeText={setExerciseName} />
+              <View style={styles.row}>
+                <Input placeholder={t("plans.repScheme")} value={repScheme} onChangeText={setRepScheme} style={styles.flex} />
+                <Input
+                  placeholder={t("plans.defaultWeightKg")}
+                  value={defaultWeightLabel}
+                  onChangeText={setDefaultWeightLabel}
+                  style={styles.mediumInput}
+                />
+              </View>
+              <Button
+                label={t("plans.addExerciseInline")}
+                variant="outline"
+                onPress={addExercise}
+                leftIcon={<MaterialCommunityIcons name="plus" size={16} color={colors.text} />}
+              />
+            </Card>
+
+            {draftExercises.length > 0 ? (
+              <View style={styles.listBlock}>
+                {draftExercises.map((item, index) => (
+                  <View key={`${item.exerciseName}-${index}`} style={[styles.listRow, { borderColor: colors.border }]}>
+                    <Text style={{ color: colors.text, fontFamily: typography.body }}>{item.exerciseName}</Text>
+                    <Text style={{ color: colors.textMuted }}>
+                      {item.repScheme} - {item.defaultWeightLabel}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            <Button
+              label={t("plans.saveTemplate")}
+              onPress={() => void handleSave()}
+              style={{ ...styles.saveButton, backgroundColor: colors.primarySoft }}
+              leftIcon={<MaterialCommunityIcons name="content-save-outline" size={16} color={colors.primaryStrong} />}
+              variant="secondary"
             />
           </View>
-          <Button label={t("plans.addExerciseInline")} variant="outline" onPress={addExercise} leftIcon={<MaterialCommunityIcons name="plus" size={16} color={colors.text} />} />
-        </Card>
-
-        {draftExercises.length > 0 ? (
-          <View style={styles.listBlock}>
-            {draftExercises.map((item, index) => (
-              <View key={`${item.exerciseName}-${index}`} style={[styles.listRow, { borderColor: colors.border }]}>
-                <Text style={{ color: colors.text, fontFamily: typography.body }}>{item.exerciseName}</Text>
-                <Text style={{ color: colors.textMuted }}>
-                  {item.repScheme} - {item.defaultWeightKg}kg
-                </Text>
-              </View>
-            ))}
-          </View>
         ) : null}
-
-        <Button
-          label={t("plans.saveTemplate")}
-          onPress={() => void handleSave()}
-          style={[styles.saveButton, { backgroundColor: colors.primarySoft }]}
-          leftIcon={<MaterialCommunityIcons name="content-save-outline" size={16} color={colors.primaryStrong} />}
-          variant="secondary"
-        />
       </Card>
 
       <View style={styles.sectionHeader}>
@@ -254,89 +416,188 @@ export function PlansScreen() {
       {orderedTemplates.length === 0 ? (
         <Text style={{ color: colors.textMuted }}>{t("plans.noTemplates")}</Text>
       ) : (
-        orderedTemplates.map((item, index) => (
-          <Card key={item.id} style={styles.planListCard}>
-            <Pressable onPress={() => void handleToggleTemplateDetails(item.id)} style={styles.expandPressable} hitSlop={8}>
-              <View style={styles.rowBetween}>
-                <View>
-                  <Text style={[styles.planLabel, { color: colors.textMuted }]}>{t("plans.planLabel", { index: index + 1 })}</Text>
-                  <Text style={[styles.planTitle, { color: colors.text }]}>{item.muscleGroup}</Text>
-                  <View style={styles.templateMetaRow}>
-                    <Text style={{ color: colors.textMuted }}>{t("plans.exerciseCount", { count: templateCounts[item.id] ?? 0 })}</Text>
-                    <Badge label={item.isActive ? t("plans.activeState") : t("plans.inactiveState")} variant={item.isActive ? "success" : "warning"} />
-                  </View>
-                </View>
-                <MaterialCommunityIcons
-                  name={expandedTemplateId === item.id ? "chevron-up" : "chevron-down"}
-                  size={18}
-                  color={colors.textMuted}
-                />
-              </View>
-            </Pressable>
+        orderedTemplates.map((item, index) => {
+          const isEditing = editingTemplateId === item.id;
+          const templateExercises = templateExercisesById[item.id] ?? [];
 
-            <View style={styles.templateActionsRow}>
-              {item.isActive ? (
+          return (
+            <Card key={item.id} style={styles.planListCard}>
+              <Pressable onPress={() => void handleToggleTemplateDetails(item.id)} style={styles.expandPressable} hitSlop={8}>
+                <View style={styles.rowBetween}>
+                  <View style={styles.flex}>
+                    <Text style={[styles.planLabel, { color: colors.textMuted }]}>{t("plans.planLabel", { index: index + 1 })}</Text>
+                    {isEditing ? (
+                      <Input
+                        value={editingTemplateMuscleGroup}
+                        onChangeText={setEditingTemplateMuscleGroup}
+                        placeholder={t("plans.muscleGroup")}
+                        style={styles.editTemplateInput}
+                      />
+                    ) : (
+                      <Text style={[styles.planTitle, { color: colors.text }]}>{item.muscleGroup}</Text>
+                    )}
+                    <View style={styles.templateMetaRow}>
+                      <Text style={{ color: colors.textMuted }}>{t("plans.exerciseCount", { count: templateCounts[item.id] ?? 0 })}</Text>
+                    </View>
+                  </View>
+                  <MaterialCommunityIcons
+                    name={expandedTemplateId === item.id ? "chevron-up" : "chevron-down"}
+                    size={18}
+                    color={colors.textMuted}
+                  />
+                </View>
+              </Pressable>
+
+              <View style={styles.templateActionsRow}>
                 <Pressable
-                  onPress={() => void handleToggleTemplateActive(item.id, false)}
+                  onPress={() => void handleMoveTemplate(item.id, "up")}
+                  style={[styles.iconButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                  hitSlop={8}
+                  disabled={index === 0}
+                >
+                  <MaterialCommunityIcons
+                    name="arrow-up"
+                    size={18}
+                    color={index === 0 ? colors.textMuted : colors.text}
+                  />
+                </Pressable>
+                <Pressable
+                  onPress={() => void handleMoveTemplate(item.id, "down")}
+                  style={[styles.iconButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                  hitSlop={8}
+                  disabled={index === orderedTemplates.length - 1}
+                >
+                  <MaterialCommunityIcons
+                    name="arrow-down"
+                    size={18}
+                    color={index === orderedTemplates.length - 1 ? colors.textMuted : colors.text}
+                  />
+                </Pressable>
+                {isEditing ? (
+                  <>
+                    <Pressable
+                      onPress={() => void handleSaveTemplateEdit(item)}
+                      style={[styles.iconButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                      hitSlop={8}
+                    >
+                      <MaterialCommunityIcons name="content-save-outline" size={18} color={colors.primary} />
+                    </Pressable>
+                    <Pressable
+                      onPress={handleCancelTemplateEdit}
+                      style={[styles.iconButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                      hitSlop={8}
+                    >
+                      <MaterialCommunityIcons name="close" size={18} color={colors.textMuted} />
+                    </Pressable>
+                  </>
+                ) : (
+                  <Pressable
+                    onPress={() => void handleStartTemplateEdit(item)}
+                    style={[styles.iconButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                    hitSlop={8}
+                  >
+                    <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.text} />
+                  </Pressable>
+                )}
+                <Pressable
+                  onPress={() => void handleToggleTemplateActive(item.id)}
                   style={[styles.iconDangerButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
                   hitSlop={8}
                 >
                   <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
                 </Pressable>
-              ) : (
-                <Button
-                  label={t("plans.activateTemplate")}
-                  size="sm"
-                  variant="secondary"
-                  onPress={() => void handleToggleTemplateActive(item.id, true)}
-                />
-              )}
-            </View>
-
-            {expandedTemplateId === item.id ? (
-              <View style={[styles.templateExercisesBlock, { borderColor: colors.border }]}>
-                {loadingTemplateId === item.id ? (
-                  <Text style={{ color: colors.textMuted }}>{t("plans.loadingExercises")}</Text>
-                ) : (templateExercisesById[item.id] ?? []).length === 0 ? (
-                  <Text style={{ color: colors.textMuted }}>{t("plans.noExercises")}</Text>
-                ) : (
-                  (templateExercisesById[item.id] ?? []).map((exercise) => (
-                    <View key={exercise.id} style={[styles.exerciseRow, { borderColor: colors.border }]}>
-                      <View style={styles.exerciseTextWrap}>
-                        <Text style={[styles.exerciseTitle, { color: colors.text }]}>{exercise.exerciseName}</Text>
-                        <Text style={{ color: colors.textMuted }}>
-                          {exercise.repScheme} - {exercise.defaultWeightKg}kg
-                        </Text>
-                      </View>
-                      <View style={styles.exerciseActionWrap}>
-                        <Badge
-                          label={exercise.isActive ? t("plans.activeState") : t("plans.inactiveState")}
-                          variant={exercise.isActive ? "success" : "warning"}
-                        />
-                        {exercise.isActive ? (
-                          <Pressable
-                            onPress={() => void handleToggleExerciseActive(item.id, exercise.id, false)}
-                            style={[styles.iconDangerButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
-                            hitSlop={8}
-                          >
-                            <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
-                          </Pressable>
-                        ) : (
-                          <Button
-                            label={t("plans.activateExercise")}
-                            size="sm"
-                            variant="outline"
-                            onPress={() => void handleToggleExerciseActive(item.id, exercise.id, true)}
-                          />
-                        )}
-                      </View>
-                    </View>
-                  ))
-                )}
               </View>
-            ) : null}
-          </Card>
-        ))
+
+              {expandedTemplateId === item.id ? (
+                <View style={[styles.templateExercisesBlock, { borderColor: colors.border }]}>
+                  {loadingTemplateId === item.id ? (
+                    <Text style={{ color: colors.textMuted }}>{t("plans.loadingExercises")}</Text>
+                  ) : templateExercises.length === 0 ? (
+                    <Text style={{ color: colors.textMuted }}>{t("plans.noExercises")}</Text>
+                  ) : (
+                    templateExercises.map((exercise) => {
+                      const exerciseDraft = editingExerciseDrafts[exercise.id];
+                      const isExerciseEditing = isEditing && Boolean(exerciseDraft);
+
+                      return (
+                        <View key={exercise.id} style={[styles.exerciseRow, { borderColor: colors.border }]}>
+                          {isExerciseEditing ? (
+                            <View style={styles.exerciseEditWrap}>
+                              <Input
+                                value={exerciseDraft?.exerciseName ?? exercise.exerciseName}
+                                onChangeText={(value) =>
+                                  setEditingExerciseDrafts((current) => ({
+                                    ...current,
+                                    [exercise.id]: {
+                                      exerciseName: value,
+                                      repScheme: current[exercise.id]?.repScheme ?? exercise.repScheme,
+                                      defaultWeightLabel:
+                                        current[exercise.id]?.defaultWeightLabel ?? normalizeWeightLabel(exercise.defaultWeightLabel)
+                                    }
+                                  }))
+                                }
+                                placeholder={t("plans.exerciseName")}
+                              />
+                              <View style={styles.row}>
+                                <Input
+                                  value={exerciseDraft?.repScheme ?? exercise.repScheme}
+                                  onChangeText={(value) =>
+                                    setEditingExerciseDrafts((current) => ({
+                                      ...current,
+                                      [exercise.id]: {
+                                        exerciseName: current[exercise.id]?.exerciseName ?? exercise.exerciseName,
+                                        repScheme: value,
+                                        defaultWeightLabel:
+                                          current[exercise.id]?.defaultWeightLabel ?? normalizeWeightLabel(exercise.defaultWeightLabel)
+                                      }
+                                    }))
+                                  }
+                                  placeholder={t("plans.repScheme")}
+                                  style={styles.flex}
+                                />
+                                <Input
+                                  value={exerciseDraft?.defaultWeightLabel ?? normalizeWeightLabel(exercise.defaultWeightLabel)}
+                                  onChangeText={(value) =>
+                                    setEditingExerciseDrafts((current) => ({
+                                      ...current,
+                                      [exercise.id]: {
+                                        exerciseName: current[exercise.id]?.exerciseName ?? exercise.exerciseName,
+                                        repScheme: current[exercise.id]?.repScheme ?? exercise.repScheme,
+                                        defaultWeightLabel: value
+                                      }
+                                    }))
+                                  }
+                                  placeholder={t("plans.defaultWeightKg")}
+                                  style={styles.mediumInput}
+                                />
+                              </View>
+                            </View>
+                          ) : (
+                            <View style={styles.exerciseTextWrap}>
+                              <Text style={[styles.exerciseTitle, { color: colors.text }]}>{exercise.exerciseName}</Text>
+                              <Text style={{ color: colors.textMuted }}>
+                                {exercise.repScheme} - {normalizeWeightLabel(exercise.defaultWeightLabel)}
+                              </Text>
+                            </View>
+                          )}
+                          <View style={styles.exerciseActionWrap}>
+                            <Pressable
+                              onPress={() => void handleToggleExerciseActive(item.id, exercise.id)}
+                              style={[styles.iconDangerButton, { borderColor: colors.border, backgroundColor: colors.surfaceAlt }]}
+                              hitSlop={8}
+                            >
+                              <MaterialCommunityIcons name="trash-can-outline" size={18} color={colors.danger} />
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              ) : null}
+            </Card>
+          );
+        })
       )}
 
       <View style={styles.sectionHeader}>
@@ -366,13 +627,9 @@ function normalizeRepScheme(value: string) {
   return normalized.length > 0 ? normalized : "4x10";
 }
 
-function normalizeWeight(value: string) {
-  const normalized = value.trim().replace(",", ".");
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return 0;
-  }
-  return Math.round(parsed * 100) / 100;
+function normalizeWeightLabel(value: string | null | undefined) {
+  const normalized = (value ?? "").trim();
+  return normalized.length > 0 ? normalized : "0";
 }
 
 const styles = StyleSheet.create({
@@ -422,8 +679,15 @@ const styles = StyleSheet.create({
   smallInput: {
     width: 90
   },
+  mediumInput: {
+    width: 130
+  },
   newPlanCard: {
-    borderWidth: 1
+    borderWidth: 1,
+    gap: 10
+  },
+  newPlanBody: {
+    gap: 10
   },
   refreshCard: {
     borderWidth: 1
@@ -457,7 +721,17 @@ const styles = StyleSheet.create({
   },
   templateActionsRow: {
     flexDirection: "row",
-    justifyContent: "flex-end"
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 8
+  },
+  iconButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center"
   },
   iconDangerButton: {
     borderWidth: 1,
@@ -481,11 +755,13 @@ const styles = StyleSheet.create({
   exerciseTextWrap: {
     gap: 2
   },
+  exerciseEditWrap: {
+    gap: 8
+  },
   exerciseActionWrap: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8
+    justifyContent: "flex-end"
   },
   exerciseTitle: {
     fontSize: 14,
@@ -499,5 +775,8 @@ const styles = StyleSheet.create({
   planTitle: {
     fontSize: 16,
     fontWeight: "700"
+  },
+  editTemplateInput: {
+    marginTop: 4
   }
 });

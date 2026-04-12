@@ -30,9 +30,13 @@ export function DashboardScreen() {
   const { sessions, achievements, language, profile } = useAppContext();
   const { colors, typography } = useTheme();
   const insets = useSafeAreaInsets();
+  const currentYear = new Date().getFullYear();
 
   const recordedSessions = useMemo(() => sessions.filter(hasRecordedData), [sessions]);
-  const completedWorkoutsCount = useMemo(() => sessions.filter((item) => Boolean(item.checkedInAtIso)).length, [sessions]);
+  const completedWorkoutsCountCurrentYear = useMemo(
+    () => sessions.filter((item) => Boolean(item.checkedInAtIso) && item.dateIso.startsWith(`${currentYear}-`)).length,
+    [currentYear, sessions]
+  );
   const calendarBaseDate = useMemo(() => new Date(), []);
   const month = useMemo(() => buildMonthGrid(calendarBaseDate, recordedSessions), [calendarBaseDate, recordedSessions]);
   const [selectedDateIso, setSelectedDateIso] = useState(localDateIso(new Date()));
@@ -83,7 +87,7 @@ export function DashboardScreen() {
     return { currentAvg, previousAvg, delta };
   }, [recordedSessions]);
 
-  const mascotProgress = useMemo(() => Math.max(0, completedWorkoutsCount), [completedWorkoutsCount]);
+  const mascotProgress = useMemo(() => Math.max(0, completedWorkoutsCountCurrentYear), [completedWorkoutsCountCurrentYear]);
 
   const offensiveLevel = useMemo(() => getOffensiveLevelByDays(mascotProgress), [mascotProgress]);
   const offensiveTitle = useMemo(
@@ -113,7 +117,12 @@ export function DashboardScreen() {
       <View style={styles.kpiRow}>
         <Card style={[styles.mascotHeroCard, { backgroundColor: colors.primarySoft }]}>
           {offensiveImageSource ? (
-            <Image key={offensiveImageHref} source={offensiveImageSource} style={styles.mascotHeroImage} resizeMode="contain" />
+            <Image
+              key={`${currentYear}-${offensiveImageHref}`}
+              source={offensiveImageSource}
+              style={styles.mascotHeroImage}
+              resizeMode="contain"
+            />
           ) : (
             <View style={[styles.kpiIconWrap, { backgroundColor: colors.surface }]}>
               <MaterialCommunityIcons name="shield-sword-outline" size={26} color={colors.primary} />

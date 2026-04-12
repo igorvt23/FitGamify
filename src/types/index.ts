@@ -55,6 +55,7 @@ export type TemplateExercise = {
   exerciseName: string;
   repScheme: string;
   defaultWeightKg: number;
+  defaultWeightLabel: string;
   imageKey: string;
   isActive: boolean;
 };
