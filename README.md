@@ -10,6 +10,23 @@ Este projeto esta sendo desenvolvido inteiramente com inteligencia artificial, d
 - Estilo das telas com Figma Make
 - Código com Codex
 
+## Design no Figma
+
+- [FitGamify MVP Design (Figma Make)](https://www.figma.com/make/8pqK3JqOSVD3RjxgXlk5Xg/FitGamify-MVP-Design?p=f&t=vz32m6okP6zqDFOf-0)
+
+## Screenshots do app
+
+<p align="center">
+  <img src="./src/img/home_app.png" alt="Tela inicial com planos de treino" width="280" />
+  <img src="./src/img/dashboard_app.png" alt="Tela de desempenho com grafico" width="280" />
+  <img src="./src/img/treino_app.png" alt="Tela de treino" width="280" />
+  <img src="./src/img/ajustes_app.png" alt="Tela de ajustes" width="280" />
+</p>
+
+Use estas paths para as imagens que voce enviou:
+- `docs/screenshots/tela-home-planos.png`
+- `docs/screenshots/tela-desempenho-dashboard.png`
+
 ## Requisitos
 
 - Node.js 20 ou 22 LTS (evite Node 24 no Expo CLI)
